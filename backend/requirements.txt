@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+smolagents[mcp]
+python-dotenv
+litellm
+mcpadapt
+mcp

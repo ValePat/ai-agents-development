@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@modelcontextprotocol/server-everything": "^2026.1.26",
+    "fetch-mcp": "^0.0.5"
+  }
+}
