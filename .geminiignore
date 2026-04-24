@@ -1,0 +1,66 @@
+# .geminiignore
+# Questo file elenca i file e le cartelle da NON inviare mai a Gemini CLI
+
+# --- SEGRETI E PRIVACY (PERICOLO) ---
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pub
+secrets.json
+credentials.json
+auth.json
+.netrc
+
+# --- DIPENDENZE (TROPPI TOKEN) ---
+node_modules/
+vendor/
+.venv/
+env/
+virtualenv/
+lib/python*/
+
+# --- BUILD E CACHE ---
+dist/
+build/
+out/
+.next/
+.nuxt/
+.cache/
+*.pyc
+*.pyo
+__pycache__/
+
+# --- FILE DI LOCK (Inutili per le domande) ---
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+composer.lock
+poetry.lock
+Cargo.lock
+
+# --- LOG E DATABASE ---
+*.log
+*.sqlite
+*.db
+*.sql
+*.dump
+
+# --- IDE E SISTEMA ---
+.git/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- MEDIA E BINARI ---
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.pdf
+*.zip
+*.tar.gz
+*.exe
+*.bin

@@ -88,10 +88,19 @@ async def lifespan(app: FastAPI):
 
         logger.info(f"✓ MCP tools loaded: {[t.name for t in tools]}")
 
+        # -------- INSTRUCTIONS --------
+        instructions_path = os.path.join(os.path.dirname(__file__), "agent_instructions.txt")
+        if os.path.exists(instructions_path):
+            with open(instructions_path, "r", encoding="utf-8") as f:
+                agent_instructions = f.read()
+        else:
+            agent_instructions = "You are a helpful AI assistant."
+
         # -------- AGENT --------
         agent = ToolCallingAgent(
             tools=tools,
             model=model,
+            # prompt_templates={"system_prompt": agent_instructions}
         )
 
         logger.info("✓ Agent initialized with MCP")
