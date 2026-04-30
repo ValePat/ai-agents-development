@@ -96,5 +96,5 @@ Open [http://localhost:3000](http://localhost:3000) to access the chat interface
 |-----------------------------------------------------|--------------------------------------------------|
 | [Backend README](./backend/README.md)               | Backend setup, API reference, MCP configuration |
 | [Frontend README](./frontend/README.md)             | Frontend setup and component overview            |
-| [SAFETY.md](./docs/SAFETY.md)                    | Guidelines for safe AI tool usage                |
-| [SECURITY_AUDIT.md](./docs/SECURITY_AUDIT.md)    | Security audit findings and recommendations      |
+| [SAFETY.md](./docs/SAFETY.md)                       | Guidelines for safe AI tool usage                |
+| [SECURITY_AUDIT.md](./docs/SECURITY_AUDIT.md)       | Security audit findings and recommendations      |
