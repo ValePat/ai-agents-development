@@ -1,47 +1,100 @@
-# AI Agent Boilerplate (Next.js + FastAPI + MCP)
+# AI Agent Boilerplate — Next.js + FastAPI + MCP
 
-This project is a professional boilerplate for building AI agents with a secure FastAPI backend and a modern Next.js frontend. It features integration with the **Model Context Protocol (MCP)** for enhanced agent capabilities.
+A production-ready boilerplate for building AI agents with a **secure FastAPI backend** and a **modern Next.js frontend**. Features deep integration with the **Model Context Protocol (MCP)** for standardized, sandboxed agent tool access.
 
-## Architecture
+---
 
-- **Frontend**: Next.js (App Router) with Tailwind CSS.
-- **Backend**: FastAPI server using `smolagents` and `LiteLLM`.
-- **Agent Protocol**: Integrated with MCP (Model Context Protocol) to provide tools like filesystem access.
+## Architecture Overview
+
+| Layer     | Technology                          | Role                                      |
+|-----------|-------------------------------------|-------------------------------------------|
+| Frontend  | Next.js 15+ (App Router) + Tailwind | Chat UI, user interaction                 |
+| Backend   | FastAPI + smolagents + LiteLLM      | Agent orchestration, API server           |
+| Protocol  | MCP (Model Context Protocol)        | Standardized, sandboxed tool access       |
+| LLM       | OpenRouter (configurable)           | Model provider, supports many LLMs        |
+
+---
 
 ## Project Structure
 
 ```text
 ai-agent-training/
-├── backend/          # FastAPI server, agent logic, MCP setup
-│   └── sandbox/      # Restricted directory for agent file operations
-├── frontend/         # Next.js web application
-└── README.md         # Project overview
+├── backend/                  # FastAPI server, agent logic, MCP setup
+│   ├── agent_instructions.txt  # Behavioral rules injected into the agent
+│   ├── main.py               # Server entry point
+│   ├── requirements.txt      # Python dependencies
+│   └── sandbox/              # Restricted directory for agent file operations
+├── frontend/                 # Next.js web application
+│   ├── app/                  # App Router pages and layouts
+│   └── components/           # Reusable React components
+├── .geminiignore             # Files excluded from Gemini CLI context
+├── docs/                     # Documentation folder
+│   ├── SAFETY.md             # AI tool usage safety guidelines
+│   └── SECURITY_AUDIT.md     # Security audit report
 ```
+
+---
 
 ## Quick Start
 
+### Prerequisites
+
+- Python 3.10+
+- Node.js 18+
+- An [OpenRouter](https://openrouter.ai/) API key
+
 ### 1. Backend Setup
-1. `cd backend`
-2. Create virtual environment: `python -m venv venv`
-3. Activate venv: `source venv/bin/activate` (or `venv\Scripts\activate` on Windows)
-4. `pip install -r requirements.txt`
-5. Configure `.env` (set `OPENROUTER_API_KEY`)
-6. `python main.py`
+
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+Create a `.env` file in the `backend/` directory:
+
+```env
+OPENROUTER_API_KEY=your_key_here
+MODEL_ID=openrouter/anthropic/claude-3-5-sonnet  # optional, this is the default
+```
+
+Start the server:
+
+```bash
+python main.py
+```
+
+The API will be available at [http://localhost:8000](http://localhost:8000).
 
 ### 2. Frontend Setup
-1. `cd frontend`
-2. `npm install`
-3. `npm run dev`
 
-Access the application at [http://localhost:3000](http://localhost:3000).
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-## Features
+Open [http://localhost:3000](http://localhost:3000) to access the chat interface.
 
-- **MCP Filesystem Integration**: The agent can safely read and write files within the `backend/sandbox` directory.
-- **LiteLLM Support**: Easily switch between different LLM providers (defaulting to OpenRouter).
-- **Modern UI**: Clean chat interface built with Tailwind CSS.
-- **Windows Optimized**: Includes specific fixes for asynchronous execution on Windows.
+---
 
-For detailed instructions, see the READMEs in the respective directories:
-- [Backend Documentation](./backend/README.md)
-- [Frontend Documentation](./frontend/README.md)
+## Key Features
+
+- **MCP Filesystem Integration** — The agent can safely read and write files, but only within the `backend/sandbox/` directory.
+- **LiteLLM Support** — Easily switch between LLM providers (OpenAI, Anthropic, Google, etc.) via a single config change.
+- **Sandboxed Agent** — All file operations are restricted at the MCP server level, preventing any path traversal.
+- **Behavioral Instructions** — The agent's personality and restrictions are defined in `backend/agent_instructions.txt`.
+- **Modern Chat UI** — Responsive, Markdown-aware chat interface built with Next.js and Tailwind CSS.
+- **Cross-Platform** — Includes specific fixes for asynchronous execution on Windows.
+
+---
+
+## Documentation
+
+| Document                                            | Description                                      |
+|-----------------------------------------------------|--------------------------------------------------|
+| [Backend README](./backend/README.md)               | Backend setup, API reference, MCP configuration |
+| [Frontend README](./frontend/README.md)             | Frontend setup and component overview            |
+| [SAFETY.md](./docs/SAFETY.md)                    | Guidelines for safe AI tool usage                |
+| [SECURITY_AUDIT.md](./docs/SECURITY_AUDIT.md)    | Security audit findings and recommendations      |
