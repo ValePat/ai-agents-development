@@ -1,6 +1,6 @@
 # Next.js + FastAPI AI Agent Boilerplate
 
-This is a professional boilerplate for building AI agents with a secure backend and a modern frontend.
+This is a boilerplate for building AI agents with a secure backend and a modern frontend.
 
 ## Tech Stack
 - **Frontend**: Next.js (App Router), Tailwind CSS
