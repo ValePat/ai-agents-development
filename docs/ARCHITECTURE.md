@@ -1,6 +1,6 @@
 # System Architecture & Framework Documentation
 
-This document explains the technical design, the interaction between components, and the virtualization layer used for local development on macOS.
+This document explains the technical design, the interaction between components, and the Model Context Protocol (MCP) integration.
 
 ---
 
@@ -29,26 +29,13 @@ graph TD
 
 ---
 
-## 🐳 Containerization & Virtualization (macOS + Colima)
-
-### Why Colima?
-On macOS, Docker cannot run natively because the Docker Engine requires a Linux kernel. **Colima** provides a lightweight Linux Virtual Machine (using **QEMU**) that runs the Docker daemon.
-
-### The Bridge Architecture
-- **Virtualization Layer**: Colima creates a small Linux VM. All Docker containers actually run inside this VM, not directly on macOS.
-- **Network Bridging**: When you map port `8000:8000`, Colima routes traffic from your Mac's `localhost` into the Linux VM's internal network, and finally to the container.
-- **Volume Mounting (VirtioFS/9p)**: Files in `./backend/sandbox` are synced between your Mac and the Linux VM. The container then mounts these from the VM. This is why we use "Anonymous Volumes" (e.g., `/app/node_modules`) to prevent slow performance or permission conflicts with the host filesystem.
-
----
-
 ## 🧠 Backend Framework: `smolagents`
 
 We use the `smolagents` library by Hugging Face because of its simplicity and "Code-as-Action" philosophy.
 
 ### Key Components:
 - **`ToolCallingAgent`**: Unlike traditional "ReAct" agents that just output text, this agent generates structured calls to tools.
-- **`LiteLLMModel`**: A provider-agnostic wrapper. We use it to connect to **OpenRouter**, allowing us to switch between Claude, GPT-4, or Llama with a single environment variable change.
-- **Lifespan Management**: The FastAPI `lifespan` event is used to initialize the MCP server and the Agent exactly once when the server starts, ensuring the `AsyncExitStack` correctly cleans up subprocesses on shutdown.
+- **`LiteLLMModel`**: A provider-agnostic wrapper. We use it to connect to **OpenRouter**, allowing us to switch models with a single environment variable.
 
 ---
 
@@ -57,24 +44,72 @@ We use the `smolagents` library by Hugging Face because of its simplicity and "C
 The **Model Context Protocol** is used to decouple the AI Agent from the specific tools it uses.
 
 ### Implementation:
-Instead of writing custom Python functions for file management, we launch a **Node.js-based MCP Filesystem Server** as a subprocess inside the Python container.
-- **Standardization**: The Agent doesn't care *how* files are listed; it just speaks the MCP protocol.
-- **Security**: The MCP server is launched with a `SAFE_DIR` argument (`/app/sandbox`), hard-restricting the agent's "world" to that folder. Even if the LLM is compromised, it cannot escape this directory because the MCP server itself enforces the boundary.
+The backend uses a dynamic loading mechanism defined in `backend/main.py`. It reads `backend/mcp_servers.json` and initializes each server using the `smolagents` `ToolCollection.from_mcp` method.
+
+### `mcp_servers.json` Structure:
+```json
+{
+  "mcpServers": {
+    "server-name": {
+      "command": "executable",
+      "args": ["arg1", "{{SAFE_DIR}}"],
+      "env": { "KEY": "VALUE" }
+    }
+  }
+}
+```
+- `{{SAFE_DIR}}`: Automatically replaced with the absolute path to `backend/sandbox`.
 
 ---
 
-## ⚛️ Frontend Framework: Next.js
+## 🧠 Memory & Reasoning Design
 
-The frontend is built with **Next.js 15+** and **Turbopack**.
+### Core Principle
+👉 **Stateless at Runtime**: The agent is only the decision layer.  
+👉 **External Memory**: Memory is a shared external service (via MCP), not prompt-based.
 
-### Features:
-- **API Interaction**: Uses a standard `fetch` pattern to send messages to the `/api/chat` endpoint.
-- **State Management**: Manages chat history locally to provide the LLM with context for multi-turn conversations.
-- **Environment Handling**: Uses `NEXT_PUBLIC_API_URL` to dynamically point to the backend, whether it's running locally on the host or inside a Docker network.
+### Memory Types
+- **Episodic**: Chat history for the current session.
+- **Semantic**: Facts about the repository and project.
+- **Procedural**: Documentation of how previous tasks were solved.
 
 ---
 
-## 🛠 Admin Summary
-- **Language**: Python 3.11 (Backend), TypeScript/Node 20 (Frontend).
-- **Communication**: HTTP/JSON (External), Stdio/JSON-RPC (Internal MCP).
-- **Runtime**: Docker (Linux) via Colima (macOS VM).
+## 🧭 Agent Behavior Model
+
+The agent follows an execution loop:
+1. **Context Loading**: Retrieve relevant memory via MCP.
+2. **Analysis**: Understand repo context using Filesystem/Git tools.
+3. **Planning**: Generate an implicit plan for the task.
+4. **Execution**: Execute tools sequentially (Code Analysis, Git, Sandbox).
+5. **Validation**: Verify results (Run tests/app).
+6. **Persistence**: Commit changes via Git MCP and store summary in Memory MCP.
+
+---
+
+## 🔐 Sandbox & Safety
+
+### Sandbox Structure
+```text
+sandbox/
+  ├── repos/          # Cloned repositories
+  ├── apps/           # Generated applications
+  └── runtime_logs/   # Execution logs
+```
+
+### Safety Constraints
+- **Strict Isolation**: No access outside the `/app/sandbox` directory.
+- **Tool-Only Access**: All filesystem operations MUST go through MCP tools.
+- **Non-Root**: All processes run as a non-privileged `appuser`.
+
+---
+
+## 🛠 Extension Guide: Adding New Tools
+
+To add a new capability (e.g., Git, SQLite):
+1. Find an MCP server or write your own.
+2. Add it to `backend/mcp_servers.json`.
+3. Restart the backend and verify the logs for `✓ Loaded tools from [server]`.
+
+---
+*Generated by Gemini CLI - May 2026*

@@ -4,97 +4,102 @@ A production-ready boilerplate for building AI agents with a **secure FastAPI ba
 
 ---
 
-## Architecture Overview
+## 🏗 Architecture Overview
 
 | Layer     | Technology                          | Role                                      |
 |-----------|-------------------------------------|-------------------------------------------|
-| Frontend  | Next.js 15+ (App Router) + Tailwind | Chat UI, user interaction                 |
-| Backend   | FastAPI + smolagents + LiteLLM      | Agent orchestration, API server           |
-| Protocol  | MCP (Model Context Protocol)        | Standardized, sandboxed tool access       |
-| LLM       | OpenRouter (configurable)           | Model provider, supports many LLMs        |
+| **Frontend**  | Next.js 15+ (App Router) + Tailwind | Chat UI, user interaction                 |
+| **Backend**   | FastAPI + smolagents + LiteLLM      | Agent orchestration, API server           |
+| **Protocol**  | MCP (Model Context Protocol)        | Standardized, sandboxed tool access       |
+| **LLM**       | OpenRouter (configurable)           | Model provider, supports many LLMs        |
 
 ---
 
-## Project Structure
+## 📂 Project Structure
 
 ```text
-ai-agent-training/
+.
 ├── backend/                  # FastAPI server, agent logic, MCP setup
 │   ├── agent_instructions.txt  # Behavioral rules injected into the agent
 │   ├── main.py               # Server entry point
-│   ├── requirements.txt      # Python dependencies
+│   ├── mcp_servers.json      # Dynamic MCP server configuration
 │   └── sandbox/              # Restricted directory for agent file operations
 ├── frontend/                 # Next.js web application
 │   ├── app/                  # App Router pages and layouts
 │   └── components/           # Reusable React components
-├── .geminiignore             # Files excluded from Gemini CLI context
-├── docs/                     # Documentation folder
-│   ├── SAFETY.md             # AI tool usage safety guidelines
-│   └── SECURITY_AUDIT.md     # Security audit report
+├── docs/                     # Detailed documentation
+│   ├── ARCHITECTURE.md       # System design and data flow
+│   ├── SAFETY.md             # Security and sandboxing guidelines
+│   └── PLANNING.md           # Roadmap and future features
+└── GEMINI.md                 # Instructions for AI agents working on this repo
 ```
 
 ---
 
-## Quick Start
+## 🚀 Quick Start
 
 ### Prerequisites
-
-- Python 3.10+
-- Node.js 18+
-- An [OpenRouter](https://openrouter.ai/) API key
+- Python 3.11+
+- Node.js 20+
+- [OpenRouter](https://openrouter.ai/) API key
 
 ### 1. Backend Setup
-
 ```bash
 cd backend
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
-
-Create a `.env` file in the `backend/` directory:
-
+Create a `.env` in `backend/`:
 ```env
 OPENROUTER_API_KEY=your_key_here
-MODEL_ID=openrouter/anthropic/claude-3-5-sonnet  # optional, this is the default
+MODEL_ID=openrouter/anthropic/claude-3-5-sonnet
 ```
-
 Start the server:
-
 ```bash
 python main.py
 ```
 
-The API will be available at [http://localhost:8000](http://localhost:8000).
-
 ### 2. Frontend Setup
-
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-
-Open [http://localhost:3000](http://localhost:3000) to access the chat interface.
-
----
-
-## Key Features
-
-- **MCP Filesystem Integration** — The agent can safely read and write files, but only within the `backend/sandbox/` directory.
-- **LiteLLM Support** — Easily switch between LLM providers (OpenAI, Anthropic, Google, etc.) via a single config change.
-- **Sandboxed Agent** — All file operations are restricted at the MCP server level, preventing any path traversal.
-- **Behavioral Instructions** — The agent's personality and restrictions are defined in `backend/agent_instructions.txt`.
-- **Modern Chat UI** — Responsive, Markdown-aware chat interface built with Next.js and Tailwind CSS.
-- **Cross-Platform** — Includes specific fixes for asynchronous execution on Windows.
+Access the UI at [http://localhost:3000](http://localhost:3000).
 
 ---
 
-## Documentation
+## 🛡 Key Features
+- **Dynamic MCP Loading**: Easily extend agent capabilities via `mcp_servers.json`.
+- **Sandboxed Execution**: Agent operations are restricted to the `backend/sandbox` directory.
+- **Memory Integration**: Built-in support for persistent context via MCP Memory server.
+- **Provider Agnostic**: Switch LLMs easily using LiteLLM via OpenRouter.
+- **Modern UI**: Clean, responsive chat interface with Markdown support.
 
-| Document                                            | Description                                      |
-|-----------------------------------------------------|--------------------------------------------------|
-| [Backend README](./backend/README.md)               | Backend setup, API reference, MCP configuration |
-| [Frontend README](./frontend/README.md)             | Frontend setup and component overview            |
-| [SAFETY.md](./docs/SAFETY.md)                       | Guidelines for safe AI tool usage                |
-| [SECURITY_AUDIT.md](./docs/SECURITY_AUDIT.md)       | Security audit findings and recommendations      |
+---
+
+## 🎯 Project Roadmap
+
+### ✅ Completed
+- **Core Infrastructure**: FastAPI + smolagents + LiteLLM.
+- **MCP Integration**: Dynamic loading of filesystem and memory servers.
+- **Sandboxing**: Strict restriction to the `sandbox/` directory.
+- **Modern UI**: Next.js interface with Markdown support.
+- **Consolidated Docs**: Streamlined documentation into 3 core manuals.
+
+### 🔄 In Progress / Planned
+- **Git MCP Integration**: Add tools for commit and branch management.
+- **Execution Sandbox**: Secure MCP server for code execution (Python/Node).
+- **App Templates**: Scaffolding for automatic project generation.
+- **Multi-Agent Orchestration**: Experimenting with Manager-Worker patterns.
+
+---
+
+## 📖 Documentation Index
+
+| Topic | Description |
+|-------|-------------|
+| [Architecture](./docs/ARCHITECTURE.md) | System design, MCP integration, and agent behavior. |
+| [Operations](./docs/OPERATIONS.md) | Local setup (Colima), Docker workflows, and deployment. |
+| [Security & Safety](./docs/SECURITY.md) | Guidelines for safe AI usage and security audit. |

@@ -34,7 +34,10 @@ export default function ChatInterface() {
       const response = await fetch("http://localhost:8000/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: input }),
+        body: JSON.stringify({ 
+          message: input,
+          history: messages 
+        }),
       });
 
       if (!response.ok) {

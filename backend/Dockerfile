@@ -22,6 +22,10 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install Node dependencies
+COPY package.json .
+RUN npm install
+
 # Copy project files
 COPY . .
 

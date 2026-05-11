@@ -73,23 +73,35 @@ Health check. Returns a status message confirming the agent is running.
 { "message": "AI Agent with MCP is running" }
 ```
 
+### `GET /api/tools`
+
+Returns a list of tools currently available to the agent.
+
+**Response:**
+```json
+{ "tools": ["read_file", "write_file", "create_entities", ...] }
+```
+
 ### `POST /api/chat`
 
-Send a message to the agent and receive a response.
+Send a message to the agent and receive a response. Supports history for short-term context.
 
 **Request Body:**
 ```json
 {
-  "message": "List the files in the sandbox",
-  "history": []
+  "message": "What did we discuss about the architecture?",
+  "history": [
+    {"role": "user", "content": "Let's use a microservices approach."},
+    {"role": "agent", "content": "Understood. I've noted that in the memory graph."}
+  ]
 }
 ```
 
 **Response:**
 ```json
 {
-  "response": "The sandbox contains the following files: ...",
-  "tools_used": ["list_directory"]
+  "response": "We discussed using a microservices approach...",
+  "tools_used": ["read_graph", "search_nodes"]
 }
 ```
 
@@ -97,16 +109,13 @@ Send a message to the agent and receive a response.
 
 ## MCP Configuration
 
-The backend initializes an MCP Filesystem Server at startup using `npx`:
+The backend loads MCP server configurations dynamically from `mcp_servers.json`. This allows you to easily add or remove tools without modifying the core logic.
 
-```python
-filesystem_params = StdioServerParameters(
-    command="npx",
-    args=["-y", "@modelcontextprotocol/server-filesystem", SAFE_DIR],
-)
-```
+### Default Servers:
+1. **Filesystem**: Safe file operations within `sandbox/`.
+2. **Memory**: Persistent context using a Knowledge Graph approach.
 
-The `SAFE_DIR` is resolved to `os.path.abspath("sandbox")`, ensuring the agent can never escape this directory regardless of the input it receives.
+The `{{SAFE_DIR}}` placeholder is automatically resolved to the absolute path of `backend/sandbox/`, ensuring the agent remains sandboxed.
 
 ---
 
