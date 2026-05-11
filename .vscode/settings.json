@@ -1,0 +1,18 @@
+{
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/node_modules/**": true,
+    "**/backend/venv/**": true,
+    "**/frontend/.next/**": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/bower_components": true,
+    "**/backend/venv": true,
+    "**/frontend/.next": true
+  },
+  "python.analysis.exclude": [
+    "backend/venv"
+  ]
+}
