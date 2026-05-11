@@ -99,9 +99,9 @@ async def lifespan(app: FastAPI):
         # -------- AGENT --------
         agent = ToolCallingAgent(
             tools=tools,
-            model=model,
-            # prompt_templates={"system_prompt": agent_instructions}
+            model=model
         )
+        agent.prompt_templates["system_prompt"] = agent_instructions
 
         logger.info("✓ Agent initialized with MCP")
 
