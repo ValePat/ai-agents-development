@@ -14,6 +14,10 @@ from smolagents import LiteLLMModel, ToolCallingAgent
 from smolagents.tools import ToolCollection
 from mcp import StdioServerParameters
 
+from orchestrator.router import router as orchestrator_router
+import orchestrator.router as orchestrator_router_module
+from orchestrator.interpolation_engine import InterpolationEngine
+
 # -------------------- WINDOWS FIX (IMPORTANT) --------------------
 # On Windows, the default event loop policy (SelectorEventLoop) doesn't support 
 # subprocesses as effectively as ProactorEventLoop. Since MCP servers often 
@@ -39,6 +43,9 @@ load_dotenv()
 # The agent is initialized once at startup and reused for all requests.
 agent = None
 
+# The interpolation engine singleton — started in lifespan, same pattern as `agent`.
+interpolation_engine: InterpolationEngine | None = None
+
 # AsyncExitStack manages the lifecycle of multiple asynchronous context managers.
 # We use it to ensure all MCP server connections are closed properly on shutdown.
 exit_stack = AsyncExitStack()
@@ -53,7 +60,7 @@ os.makedirs(SAFE_DIR, exist_ok=True)
 # The lifespan function handles logic that runs on server startup and shutdown.
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global agent, exit_stack
+    global agent, exit_stack, interpolation_engine
 
     # Retrieve environment variables for the LLM model.
     OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
@@ -64,6 +71,14 @@ async def lifespan(app: FastAPI):
 
     if not OPENROUTER_API_KEY:
         logger.warning("OPENROUTER_API_KEY not found in environment")
+
+    # -------- ORCHESTRATOR ENGINE STARTUP --------
+    # Start the 60 Hz interpolation engine independently of the chat agent.
+    # This ensures the orchestrator works even if MCP tools fail to load.
+    interpolation_engine = InterpolationEngine()
+    orchestrator_router_module.engine = interpolation_engine
+    interpolation_engine.start()
+    logger.info("✓ Orchestrator interpolation engine started.")
 
     try:
         # -------- LLM MODEL SETUP --------
@@ -149,6 +164,9 @@ async def lifespan(app: FastAPI):
 
     finally:
         # -------- SHUTDOWN CLEANUP --------
+        # Stop the orchestrator engine before closing MCP connections.
+        if interpolation_engine is not None:
+            interpolation_engine.stop()
         # Close all MCP server connections and cleanup resources.
         await exit_stack.aclose()
         agent = None
@@ -160,6 +178,9 @@ app = FastAPI(
     title="AI Agent API (Dynamic MCP)",
     lifespan=lifespan
 )
+
+# Include the orchestrator router under /orchestrator prefix.
+app.include_router(orchestrator_router, prefix="/orchestrator")
 
 # Enable CORS to allow the frontend (running on port 3000) to communicate with this API.
 app.add_middleware(

@@ -1,0 +1,132 @@
+"""
+FastAPI APIRouter for the Real-Time Show Orchestrator.
+
+All routes are mounted under the /orchestrator prefix (set in main.py).
+
+Endpoints
+---------
+GET    /status               → OrchestratorStatus
+POST   /prompt               → run LLM + set new target
+POST   /override             → pin a field to a manual slider value
+DELETE /override/{field}     → release a pinned field
+POST   /calibrate            → adjust per-macro output clamping ranges
+WebSocket /ws               → stream OrchestratorStatus JSON at ~10 Hz
+"""
+
+import logging
+
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+import asyncio
+
+from .models import (
+    OrchestratorStatus,
+    PromptRequest,
+    OverrideRequest,
+    CalibrationRequest,
+    MacroTarget,
+)
+from .llm_agent import translate_prompt, LLMTranslationError
+from .interpolation_engine import InterpolationEngine
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(tags=["orchestrator"])
+
+# Module-level engine reference — set from main.py during lifespan startup.
+# Following the same global-singleton pattern used for `agent` in main.py.
+engine: InterpolationEngine | None = None
+
+
+# ---------------------------------------------------------------------------
+# REST endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/status", response_model=OrchestratorStatus)
+async def get_status() -> OrchestratorStatus:
+    """Return the current engine state (current values, target, interpolation progress)."""
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Orchestrator engine not initialised")
+    return engine.get_status()
+
+
+@router.post("/prompt", response_model=MacroTarget)
+async def post_prompt(request: PromptRequest) -> MacroTarget:
+    """
+    Translate a semantic prompt via Gemini Flash → MacroTarget and set it on the engine.
+
+    The returned MacroTarget is the LLM's interpretation (useful for the UI preview toast).
+    """
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Orchestrator engine not initialised")
+
+    try:
+        target = await translate_prompt(request.prompt, request.duration)
+    except LLMTranslationError as exc:
+        logger.warning(f"LLM translation error: {exc}")
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    await engine.set_target(target)
+    return target
+
+
+@router.post("/override")
+async def post_override(request: OverrideRequest) -> dict:
+    """Pin a macro field to a manual value (slider override)."""
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Orchestrator engine not initialised")
+
+    try:
+        engine.hard_override(request.field, request.value)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    return {"status": "pinned", "field": request.field, "value": request.value}
+
+
+@router.delete("/override/{field}")
+async def delete_override(field: str) -> dict:
+    """Release a pinned field back to interpolation."""
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Orchestrator engine not initialised")
+
+    try:
+        engine.release_override(field)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    return {"status": "released", "field": field}
+
+
+@router.post("/calibrate")
+async def post_calibrate(request: CalibrationRequest) -> dict:
+    """Adjust per-macro output clamping ranges (rehearsal tuning)."""
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Orchestrator engine not initialised")
+
+    engine.apply_calibration(request)
+    return {"status": "calibration applied"}
+
+
+# ---------------------------------------------------------------------------
+# WebSocket — streams OrchestratorStatus at ~10 Hz
+# ---------------------------------------------------------------------------
+
+@router.websocket("/ws")
+async def websocket_status(websocket: WebSocket) -> None:
+    """
+    Streams OrchestratorStatus JSON at ~10 Hz to the director's browser.
+
+    Only one director is expected at a time; no pub/sub bus required.
+    """
+    await websocket.accept()
+    logger.info("Orchestrator WebSocket client connected")
+    try:
+        while True:
+            if engine is not None:
+                status = engine.get_status()
+                await websocket.send_json(status.model_dump())
+            await asyncio.sleep(0.1)  # 10 Hz
+    except WebSocketDisconnect:
+        logger.info("Orchestrator WebSocket client disconnected")
+    except Exception as exc:
+        logger.error(f"WebSocket error: {exc}")
