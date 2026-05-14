@@ -6,7 +6,11 @@ This document describes the **Real-Time Show Orchestrator** — a live performan
 
 ## Overview
 
-The orchestrator allows a director to steer the energy, tension, rhythm density, and atmosphere of a live show in real time. A semantic text prompt is translated by an LLM into four numeric macro values, which are then smoothly interpolated toward their targets and broadcast via OSC to Ableton Live and TouchDesigner.
+The orchestrator allows a director to steer the technical and emotional state of a live show in real time. A semantic text prompt is translated by an LLM into:
+- **7 Numeric Macros**: Smoothly interpolated values (0.0–1.0) controlling SPECTRAL and RHYTHMIC density.
+- **2 String Macros**: Expressive descriptions for VIBE and SCENE context.
+
+Targets are broadcast via OSC at 60 Hz to Ableton Live and TouchDesigner.
 
 ---
 
@@ -36,51 +40,68 @@ graph TD
 
 ---
 
+## Show Agent Logic (The Pipeline)
+
+The system operates through a **Think-Interpolate-Dispatch** pipeline:
+
+### 1. The "Think" Phase (LLM Translation)
+When you provide a prompt like *"Build tension slowly towards a cinematic climax,"* the **LLM Agent** performs a semantic mapping.
+- **Dynamic Prompting:** The agent's system prompt is built dynamically from `config.py`, ensuring it knows about all current variables and their descriptions.
+- **Output:** It determines precise values (0.0–1.0) for macros and suggests expressive strings like a `vibe` ("Cinematic") and a `scene_description`.
+
+### 2. The "Interpolate" Phase (60 Hz Engine)
+The **Interpolation Engine** is the heartbeat of the system.
+- **Smoothness:** It runs a 60 Hz loop that smoothly "slides" the numeric values toward the target using a **smoothstep** easing function.
+- **Immediate Strings:** Unlike numeric values, string macros (Vibe/Scene) are updated instantly to provide immediate semantic context.
+- **Overrides:** Handles manual "pins" from the UI, pulling specific variables out of the automated loop for manual control.
+
+### 3. The "Act" Phase (OSC Dispatch)
+The **OSC Dispatcher** takes the "live" values calculated by the engine and broadcasts them via UDP.
+- **Protocol:** Uses industry-standard OSC, multi-casting to both Music (Ableton) and Visual (TouchDesigner) systems simultaneously.
+
+---
+
 ## Components
 
 ### Backend (`backend/orchestrator/`)
 
 | Module | Responsibility |
 |---|---|
-| `models.py` | Pydantic schemas: `MacroState`, `MacroTarget`, `PromptRequest`, `OverrideRequest`, `CalibrationRequest`, `OrchestratorStatus` |
-| `llm_agent.py` | Calls `litellm.completion()` with `response_format=json_object` to translate a semantic prompt into a `MacroTarget`. Uses `asyncio.to_thread` since LiteLLM is synchronous. |
-| `interpolation_engine.py` | 60 Hz asyncio loop. Smoothstep easing from current → target values. Supports override pin/release per-field and calibration clamping. |
-| `osc_dispatcher.py` | `python-osc` UDP client pair (Ableton + TouchDesigner). Fire-and-forget; logs target addresses at startup. |
-| `router.py` | FastAPI `APIRouter` mounted at `/orchestrator`. REST + WebSocket endpoints. References the engine singleton set during lifespan. |
+| `config.py` | **Central source of truth.** Defines all numeric/string macro fields and their descriptions. |
+| `models.py` | Pydantic schemas: `MacroState`, `MacroTarget`, `PromptRequest`, `OverrideRequest`, `CalibrationRequest`, `OrchestratorStatus`. |
+| `llm_agent.py` | Translates semantic prompts into `MacroTarget` using LiteLLM. System prompt is injected dynamically from `config.py`. |
+| `interpolation_engine.py` | 60 Hz asyncio loop. Smoothstep easing for numeric fields; immediate updates for strings. |
+| `osc_dispatcher.py` | UDP client pair. Iterates through all fields in `config.py` to broadcast OSC messages. |
+| `router.py` | FastAPI `APIRouter`. REST + WebSocket endpoints. |
 
 ### Frontend (`frontend/app/orchestrator/`, `frontend/components/orchestrator/`)
 
 | File | Responsibility |
 |---|---|
-| `page.tsx` | Director console. 3 zones (Prompt, Live Gauges, Overrides) + collapsible Rehearsal Panel. |
-| `MacroGauge.tsx` | Animated horizontal gauge for one macro. Props: `value`, `isOverridden`, `isInterpolating`. |
-| `OverrideSlider.tsx` | Range slider with 50 ms debounce for live override. PIN/Release toggle calls DELETE endpoint. |
-| `PresetBank.tsx` | Save/load named macro snapshots from `localStorage`. |
-
----
-
-## Data Flow
-
-1. Director types a semantic prompt (e.g. "slow breakdown into ambient space").
-2. `POST /orchestrator/prompt` → `llm_agent.translate_prompt()` → Gemini Flash returns `MacroTarget` JSON.
-3. `InterpolationEngine.set_target()` stores the new target and records `time.monotonic()` as transition start.
-4. The 60 Hz loop runs `smoothstep(elapsed / duration)` per tick, updating `current` values.
-5. `OscDispatcher.dispatch(current)` fires 4 OSC messages to both UDP targets.
-6. The 10 Hz WebSocket pushes `OrchestratorStatus` to the browser.
-7. The browser animates `MacroGauge` bars using CSS `transition-[width]`.
+| `page.tsx` | Director console. Displays **Expression Zone** (Vibe/Scene) + 7 Numeric Gauges + Overrides. |
+| `MacroGauge.tsx` | Animated horizontal gauge for numeric macros. |
+| `OverrideSlider.tsx` | Range slider for manual override. |
+| `PresetBank.tsx` | Save/load named macro snapshots (updated for all 7 numeric fields). |
 
 ---
 
 ## OSC Messages
 
-Sent to both Ableton (`ABLETON_OSC_PORT=9000`) and TouchDesigner (`TD_OSC_PORT=9001`) on every 60 Hz tick:
+Sent to both targets on every 60 Hz tick:
 
-```
-/orchestrator/energy          <float 0.0–1.0>
-/orchestrator/tension         <float 0.0–1.0>
-/orchestrator/rhythm_density  <float 0.0–1.0>
-/orchestrator/atmosphere      <float 0.0–1.0>
-```
+| Address | Type | Description |
+|---|---|---|
+| `/orchestrator/energy` | `float` | Overall intensity |
+| `/orchestrator/tension` | `float` | Buildup/harmonic tension |
+| `/orchestrator/rhythm_density` | `float` | Percussive complexity |
+| `/orchestrator/atmosphere` | `float` | Reverb/textural space |
+| `/orchestrator/brightness` | `float` | Spectral high-frequency content |
+| `/orchestrator/industrial` | `float` | Distortion/mechanical texture |
+| `/orchestrator/glitch` | `float` | Stutter/artifact intensity |
+| `/orchestrator/vibe` | `string` | One-word vibe descriptor |
+| `/orchestrator/scene_description` | `string` | Short expressive scene text |
+
+---
 
 ---
 

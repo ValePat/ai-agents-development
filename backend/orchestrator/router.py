@@ -24,7 +24,10 @@ from .models import (
     OverrideRequest,
     CalibrationRequest,
     MacroTarget,
+    VariableDefinition,
+    refresh_models,
 )
+from .config import load_variables, save_variables, refresh_config
 from .llm_agent import translate_prompt, LLMTranslationError
 from .interpolation_engine import InterpolationEngine
 
@@ -105,6 +108,62 @@ async def post_calibrate(request: CalibrationRequest) -> dict:
 
     engine.apply_calibration(request)
     return {"status": "calibration applied"}
+
+
+# ---------------------------------------------------------------------------
+# Variable Configuration endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/variables", response_model=list[VariableDefinition])
+async def get_variables():
+    """Return all defined macro variables."""
+    return load_variables()
+
+
+@router.post("/variables")
+async def post_variable(var: VariableDefinition) -> dict:
+    """Add or update a macro variable."""
+    vars_list = load_variables()
+    
+    # Update if exists, else append
+    found = False
+    for i, v in enumerate(vars_list):
+        if v["name"] == var.name:
+            vars_list[i] = var.model_dump()
+            found = True
+            break
+    if not found:
+        vars_list.append(var.model_dump())
+        
+    save_variables(vars_list)
+    
+    # Refresh all layers
+    refresh_config()
+    refresh_models()
+    if engine:
+        engine.reinitialize()
+        
+    return {"status": "variable saved", "name": var.name}
+
+
+@router.delete("/variables/{name}")
+async def delete_variable(name: str) -> dict:
+    """Remove a macro variable."""
+    vars_list = load_variables()
+    new_vars = [v for v in vars_list if v["name"] != name]
+    
+    if len(new_vars) == len(vars_list):
+        raise HTTPException(status_code=404, detail=f"Variable {name} not found")
+        
+    save_variables(new_vars)
+    
+    # Refresh all layers
+    refresh_config()
+    refresh_models()
+    if engine:
+        engine.reinitialize()
+        
+    return {"status": "variable deleted", "name": name}
 
 
 # ---------------------------------------------------------------------------

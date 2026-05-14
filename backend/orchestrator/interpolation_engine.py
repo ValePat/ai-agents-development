@@ -16,13 +16,10 @@ import logging
 import time
 from dataclasses import dataclass, field
 
-from .models import MacroState, MacroTarget, OrchestratorStatus, CalibrationRequest
+from .models import OrchestratorStatus, CalibrationRequest
 from .osc_dispatcher import OscDispatcher
 
 logger = logging.getLogger(__name__)
-
-# Macro field names (must match MacroState attributes)
-MACRO_FIELDS: list[str] = ["energy", "tension", "rhythm_density", "atmosphere"]
 
 TICK_RATE = 60  # Hz
 
@@ -60,57 +57,85 @@ class InterpolationEngine:
     """
 
     def __init__(self) -> None:
+        self.reinitialize()
+        self._dispatcher = OscDispatcher()
+
+    def reinitialize(self) -> None:
+        """Reload configuration and models when variables change."""
+        from .models import MacroState, MacroTarget
+        from .config import MACRO_NUMERIC_FIELDS
         self.current = MacroState()
         self.target = MacroTarget()
-        self._task: asyncio.Task | None = None
+        self._task: asyncio.Task | None = getattr(self, "_task", None)
         self._override: dict[str, float] = {}   # field → pinned value
         self._transition_start: float = 0.0
         self._start_state = MacroState()
         self._calibration: dict[str, _CalibrationRange] = {
-            f: _CalibrationRange() for f in MACRO_FIELDS
+            f: _CalibrationRange() for f in MACRO_NUMERIC_FIELDS
         }
-        self._dispatcher = OscDispatcher()
+        logger.info("Interpolation engine (re)initialized with current macro fields.")
 
     # ------------------------------------------------------------------
     # Public API (called from router handlers — all on the event loop)
     # ------------------------------------------------------------------
 
-    async def set_target(self, target: MacroTarget) -> None:
+    async def set_target(self, target: Any) -> None:
         """Accept a new target from the LLM or a direct caller."""
+        from .models import MacroState
+        from .config import MACRO_STRING_FIELDS
         self._start_state = MacroState(**self.current.model_dump())
         self.target = target
         self._transition_start = time.monotonic()
+        
+        # Immediately update string fields (they don't interpolate)
+        for f in MACRO_STRING_FIELDS:
+            if hasattr(target, f):
+                setattr(self.current, f, getattr(target, f))
+            
         logger.info(
             f"New target set: {target.model_dump()} "
-            f"(duration={target.duration}s)"
+            f"(duration={getattr(target, 'duration', 4.0)}s)"
         )
 
     def hard_override(self, field: str, value: float) -> None:
         """Pin a field to a manual slider value (excludes it from interpolation)."""
-        if field not in MACRO_FIELDS:
-            raise ValueError(f"Unknown macro field: {field!r}")
+        from .config import MACRO_NUMERIC_FIELDS
+        if field not in MACRO_NUMERIC_FIELDS:
+            raise ValueError(f"Unknown numeric macro field: {field!r}")
         self._override[field] = max(0.0, min(1.0, value))
         setattr(self.current, field, self._override[field])
 
     def release_override(self, field: str) -> None:
         """Release a pinned field back to interpolation."""
-        if field not in MACRO_FIELDS:
+        from .config import MACRO_NUMERIC_FIELDS
+        if field not in MACRO_NUMERIC_FIELDS:
             raise ValueError(f"Unknown macro field: {field!r}")
         self._override.pop(field, None)
 
     def apply_calibration(self, cal: CalibrationRequest) -> None:
         """Update per-macro output clamping ranges."""
-        self._calibration["energy"] = _CalibrationRange(cal.energy_min, cal.energy_max)
-        self._calibration["tension"] = _CalibrationRange(cal.tension_min, cal.tension_max)
-        self._calibration["rhythm_density"] = _CalibrationRange(cal.rhythm_density_min, cal.rhythm_density_max)
-        self._calibration["atmosphere"] = _CalibrationRange(cal.atmosphere_min, cal.atmosphere_max)
+        from .config import MACRO_NUMERIC_FIELDS
+        for f in MACRO_NUMERIC_FIELDS:
+            min_attr = f"{f}_min"
+            max_attr = f"{f}_max"
+            if hasattr(cal, min_attr) and hasattr(cal, max_attr):
+                self._calibration[f] = _CalibrationRange(
+                    getattr(cal, min_attr), 
+                    getattr(cal, max_attr)
+                )
 
     def get_status(self) -> OrchestratorStatus:
+        from .config import get_macro_config
+        numeric_fields, _ = get_macro_config()
+        
         elapsed = time.monotonic() - self._transition_start
-        is_interp = elapsed < self.target.duration
+        # Handle case where duration might be 0 or very small
+        duration = getattr(self.target, "duration", 4.0)
+        is_interp = elapsed < duration
+        
         return OrchestratorStatus(
-            current=MacroState(**self.current.model_dump()),
-            target=MacroTarget(**self.target.model_dump()),
+            current=self.current.model_dump(),
+            target=self.target.model_dump(),
             is_interpolating=is_interp,
             elapsed_seconds=elapsed,
             pinned_fields=list(self._override.keys()),
@@ -139,31 +164,34 @@ class InterpolationEngine:
         try:
             while True:
                 tick_start = time.monotonic()
+                from .config import MACRO_NUMERIC_FIELDS
 
                 elapsed = tick_start - self._transition_start
-                duration = max(self.target.duration, 1e-6)
+                duration = max(getattr(self.target, "duration", 4.0), 1e-6)
 
                 if elapsed < duration:
                     raw_t = elapsed / duration
                     # Use linear for very short "snap" transitions
                     eased_t = raw_t if duration < 0.5 else _smoothstep(raw_t)
 
-                    for f in MACRO_FIELDS:
+                    for f in MACRO_NUMERIC_FIELDS:
                         if f in self._override:
                             continue  # pinned
-                        start_val = getattr(self._start_state, f)
-                        end_val = getattr(self.target, f)
+                        field_default = self.current.model_fields[f].default if f in self.current.model_fields else 0.5
+                        start_val = getattr(self._start_state, f, field_default)
+                        end_val = getattr(self.target, f, field_default)
                         interp_val = _lerp(start_val, end_val, eased_t)
                         # Apply calibration mapping
-                        calibrated = self._calibration[f].apply(interp_val)
+                        calibrated = self._calibration.get(f, _CalibrationRange()).apply(interp_val)
                         setattr(self.current, f, max(0.0, min(1.0, calibrated)))
                 else:
                     # Transition complete — park at target
-                    for f in MACRO_FIELDS:
+                    for f in MACRO_NUMERIC_FIELDS:
                         if f in self._override:
                             continue
-                        end_val = getattr(self.target, f)
-                        calibrated = self._calibration[f].apply(end_val)
+                        field_default = self.current.model_fields[f].default if f in self.current.model_fields else 0.5
+                        end_val = getattr(self.target, f, field_default)
+                        calibrated = self._calibration.get(f, _CalibrationRange()).apply(end_val)
                         setattr(self.current, f, max(0.0, min(1.0, calibrated)))
 
                 self._dispatcher.dispatch(self.current)

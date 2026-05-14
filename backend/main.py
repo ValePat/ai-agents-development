@@ -17,6 +17,7 @@ from mcp import StdioServerParameters
 from orchestrator.router import router as orchestrator_router
 import orchestrator.router as orchestrator_router_module
 from orchestrator.interpolation_engine import InterpolationEngine
+from config_router import router as config_router
 
 # -------------------- WINDOWS FIX (IMPORTANT) --------------------
 # On Windows, the default event loop policy (SelectorEventLoop) doesn't support 
@@ -38,6 +39,29 @@ logging.getLogger("LiteLLM").setLevel(logging.WARNING)
 
 # Load environment variables from a .env file (e.g., API keys).
 load_dotenv()
+
+# -------------------- SETTINGS BOOTSTRAP --------------------
+# Pre-populate env vars from settings.json so config_router defaults are honoured
+# even before the first PUT /api/settings/orchestrator call.
+def _bootstrap_settings_env() -> None:
+    settings_file = os.path.join(os.path.dirname(__file__), "settings.json")
+    try:
+        with open(settings_file, "r", encoding="utf-8") as f:
+            s = json.load(f)
+        orch = s.get("orchestrator", {})
+        if "model_id" in orch and not os.getenv("ORCHESTRATOR_MODEL_ID"):
+            os.environ["ORCHESTRATOR_MODEL_ID"] = orch["model_id"]
+        if "temperature" in orch and not os.getenv("ORCHESTRATOR_TEMPERATURE"):
+            os.environ["ORCHESTRATOR_TEMPERATURE"] = str(orch["temperature"])
+        if "max_tokens" in orch and not os.getenv("ORCHESTRATOR_MAX_TOKENS"):
+            os.environ["ORCHESTRATOR_MAX_TOKENS"] = str(orch["max_tokens"])
+        chat = s.get("chat_agent", {})
+        if "model_id" in chat and not os.getenv("MODEL_ID"):
+            os.environ["MODEL_ID"] = chat["model_id"]
+    except Exception:
+        pass  # Non-fatal; defaults still apply
+
+_bootstrap_settings_env()
 
 # -------------------- GLOBALS --------------------
 # The agent is initialized once at startup and reused for all requests.
@@ -181,6 +205,9 @@ app = FastAPI(
 
 # Include the orchestrator router under /orchestrator prefix.
 app.include_router(orchestrator_router, prefix="/orchestrator")
+
+# Include the configuration router under /api prefix.
+app.include_router(config_router, prefix="/api")
 
 # Enable CORS to allow the frontend (running on port 3000) to communicate with this API.
 app.add_middleware(

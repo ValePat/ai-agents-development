@@ -46,6 +46,12 @@ export default function RootLayout({
           >
             Orchestrator
           </Link>
+          <Link
+            href="/settings"
+            className="text-sm text-gray-400 hover:text-white transition-colors"
+          >
+            Settings
+          </Link>
         </nav>
         {children}
       </body>

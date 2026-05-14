@@ -8,29 +8,13 @@ import PresetBank from "@/components/orchestrator/PresetBank";
 const API_BASE = "http://localhost:8000";
 const WS_URL = "ws://localhost:8000/orchestrator/ws";
 
-// Macro metadata
-const MACROS = [
-  { field: "energy", label: "Energy" },
-  { field: "tension", label: "Tension" },
-  { field: "rhythm_density", label: "Rhythm Density" },
-  { field: "atmosphere", label: "Atmosphere" },
-] as const;
-
-type MacroField = (typeof MACROS)[number]["field"];
-
-type MacroState = {
-  energy: number;
-  tension: number;
-  rhythm_density: number;
-  atmosphere: number;
-};
-
-type OrchestratorStatus = {
-  current: MacroState;
-  target: MacroState & { duration: number };
-  is_interpolating: boolean;
-  elapsed_seconds: number;
-  pinned_fields: string[];
+type MacroDef = {
+  name: string;
+  description: string;
+  type: "numeric" | "string";
+  category: "Visual" | "Lights" | "Music";
+  min?: number;
+  max?: number;
 };
 
 type ToastMsg = {
@@ -40,8 +24,15 @@ type ToastMsg = {
 };
 
 export default function OrchestratorPage() {
+  // ── Dynamic variable definitions ─────────────────────────────────────────
+  const [numericMacros, setNumericMacros] = useState<MacroDef[]>([]);
+  const [stringMacros, setStringMacros] = useState<MacroDef[]>([]);
+  // Refs so the WebSocket closure always sees the latest variable lists
+  const numericMacrosRef = useRef<MacroDef[]>([]);
+  const stringMacrosRef = useRef<MacroDef[]>([]);
+
   // ── WebSocket state ──────────────────────────────────────────────────────
-  const [status, setStatus] = useState<OrchestratorStatus | null>(null);
+  const [status, setStatus] = useState<any | null>(null);
   const [wsConnected, setWsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -68,6 +59,40 @@ export default function OrchestratorPage() {
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4000);
   }, []);
 
+  // ── Fetch variable definitions ───────────────────────────────────────────
+  useEffect(() => {
+    let retryTimer: ReturnType<typeof setTimeout>;
+
+    const fetchVars = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/orchestrator/variables`);
+        if (res.ok) {
+          const data: MacroDef[] = await res.json();
+          setNumericMacros(data.filter((v) => v.type === "numeric"));
+          setStringMacros(data.filter((v) => v.type === "string"));
+        } else {
+          // Non-2xx: retry after 2 s
+          retryTimer = setTimeout(fetchVars, 2000);
+        }
+      } catch (err) {
+        console.error("Failed to fetch variables, retrying…", err);
+        retryTimer = setTimeout(fetchVars, 2000);
+      }
+    };
+
+    fetchVars();
+    return () => clearTimeout(retryTimer);
+  }, []);
+
+  // Keep refs in sync so the WebSocket closure always sees the latest lists
+  useEffect(() => {
+    numericMacrosRef.current = numericMacros;
+  }, [numericMacros]);
+
+  useEffect(() => {
+    stringMacrosRef.current = stringMacros;
+  }, [stringMacros]);
+
   // ── WebSocket connection ─────────────────────────────────────────────────
   useEffect(() => {
     let ws: WebSocket;
@@ -81,16 +106,24 @@ export default function OrchestratorPage() {
 
       ws.onmessage = (ev) => {
         try {
-          const data: OrchestratorStatus = JSON.parse(ev.data);
+          const data: any = JSON.parse(ev.data);
           setStatus(data);
           // Sync pinned fields from server
           setPinnedFields(new Set(data.pinned_fields));
           // Add to OSC log (last 30 entries)
           const ts = new Date().toLocaleTimeString("en-US", { hour12: false });
           const vals = data.current;
+          
+          // Construct log string dynamically (use refs to avoid stale closure)
+          const numericParts = numericMacrosRef.current
+            .map(m => `${m.name[0].toUpperCase()}:${vals[m.name]?.toFixed(2) ?? "?"}`);
+          const stringParts = stringMacrosRef.current
+            .map(m => `${m.name[0].toUpperCase()}:"${vals[m.name] ?? ""}"`);
+          const logEntry = [...numericParts, ...stringParts].join(" ");
+            
           setOscLog((prev) =>
             [
-              `${ts} E:${vals.energy.toFixed(3)} T:${vals.tension.toFixed(3)} R:${vals.rhythm_density.toFixed(3)} A:${vals.atmosphere.toFixed(3)}`,
+              `${ts} ${logEntry}`,
               ...prev,
             ].slice(0, 30)
           );
@@ -98,7 +131,6 @@ export default function OrchestratorPage() {
           // ignore malformed frames
         }
       };
-
       ws.onclose = () => {
         setWsConnected(false);
         reconnectTimer = setTimeout(connect, 2000);
@@ -137,7 +169,7 @@ export default function OrchestratorPage() {
 
       const target = await res.json();
       setPreviewTarget(target);
-      addToast(`Target set: E${target.energy.toFixed(2)} T${target.tension.toFixed(2)} R${target.rhythm_density.toFixed(2)} A${target.atmosphere.toFixed(2)} (${target.duration}s)`, "success");
+      addToast(`Target set successfully (${target.duration}s)`, "success");
     } catch (err) {
       addToast(`Error: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
     } finally {
@@ -157,7 +189,7 @@ export default function OrchestratorPage() {
 
   // ── Preset load ──────────────────────────────────────────────────────────
   const handlePresetLoad = async (preset: {
-    state: MacroState;
+    state: any;
     duration: number;
     name: string;
   }) => {
@@ -177,7 +209,7 @@ export default function OrchestratorPage() {
     }
   };
 
-  const current = status?.current ?? { energy: 0.5, tension: 0.5, rhythm_density: 0.5, atmosphere: 0.5 };
+  const current = status?.current ?? {};
   const isInterp = status?.is_interpolating ?? false;
 
   return (
@@ -203,6 +235,12 @@ export default function OrchestratorPage() {
               <span className="text-xs text-gray-400">{wsConnected ? "Live" : "Offline"}</span>
             </div>
             <a
+              href="/orchestrator/config"
+              className="text-sm text-purple-400 hover:text-purple-300 font-bold transition-all"
+            >
+              Config →
+            </a>
+            <a
               href="/"
               className="text-sm text-gray-400 hover:text-purple-400 transition-colors"
             >
@@ -213,6 +251,20 @@ export default function OrchestratorPage() {
       </header>
 
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-6 space-y-6">
+        {/* ── EXPRESSION ZONE: Vibe & Scene ────────────────────────────────── */}
+        <section className="bg-gradient-to-r from-purple-900/40 to-blue-900/40 border border-purple-500/30 rounded-2xl p-5 shadow-2xl">
+          <div className="flex flex-col md:flex-row gap-6">
+            {stringMacros.map((m) => (
+              <div key={m.name} className="flex-1 space-y-1">
+                <h2 className="text-[10px] font-bold text-purple-400 uppercase tracking-[0.2em]">{m.name.replace("_", " ")}</h2>
+                <p className="text-2xl font-black text-white tracking-tight uppercase italic">
+                  {current[m.name] || "..."}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+
         {/* ── ZONE A: Prompt Input ─────────────────────────────────────────── */}
         <section className="bg-gray-800/60 border border-purple-500/20 rounded-2xl p-5 shadow-xl">
           <h2 className="text-xs font-semibold text-purple-400 uppercase tracking-widest mb-4">
@@ -256,11 +308,11 @@ export default function OrchestratorPage() {
             <div className="mt-4 p-3 bg-purple-900/30 border border-purple-500/40 rounded-xl">
               <p className="text-xs font-semibold text-purple-400 mb-2">LLM Target Preview</p>
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs text-gray-300">
-                {MACROS.map(({ field, label }) => (
-                  <div key={field} className="flex justify-between bg-gray-700/50 rounded-lg px-2 py-1">
-                    <span className="text-gray-400">{label.split(" ")[0]}</span>
+                {numericMacros.map((m) => (
+                  <div key={m.name} className="flex justify-between bg-gray-700/50 rounded-lg px-2 py-1">
+                    <span className="text-gray-400">{m.name}</span>
                     <span className="font-mono font-bold text-white">
-                      {previewTarget[field as MacroField]?.toFixed(2)}
+                      {previewTarget[m.name]?.toFixed(2)}
                     </span>
                   </div>
                 ))}
@@ -296,14 +348,14 @@ export default function OrchestratorPage() {
             )}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {MACROS.map(({ field, label }) => (
+            {numericMacros.map((m) => (
               <MacroGauge
-                key={field}
-                name={field}
-                label={label}
-                value={current[field as MacroField]}
-                isOverridden={pinnedFields.has(field)}
-                isInterpolating={isInterp && !pinnedFields.has(field)}
+                key={m.name}
+                name={m.name}
+                label={m.name.replace("_", " ")}
+                value={current[m.name] || 0}
+                isOverridden={pinnedFields.has(m.name)}
+                isInterpolating={isInterp && !pinnedFields.has(m.name)}
               />
             ))}
           </div>
@@ -315,13 +367,13 @@ export default function OrchestratorPage() {
             Zone C — Emergency Override
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {MACROS.map(({ field, label }) => (
+            {numericMacros.map((m) => (
               <OverrideSlider
-                key={field}
-                field={field}
-                label={label}
-                liveValue={current[field as MacroField]}
-                isPinned={pinnedFields.has(field)}
+                key={m.name}
+                field={m.name}
+                label={m.name.replace("_", " ")}
+                liveValue={current[m.name] || 0}
+                isPinned={pinnedFields.has(m.name)}
                 onPinChange={handlePinChange}
               />
             ))}
@@ -391,7 +443,7 @@ export default function OrchestratorPage() {
               </div>
 
               {/* Calibration */}
-              <CalibrationPanel addToast={addToast} />
+              <CalibrationPanel addToast={addToast} macros={numericMacros} />
             </div>
           )}
         </section>
@@ -422,19 +474,25 @@ export default function OrchestratorPage() {
 
 type CalibrationPanelProps = {
   addToast: (text: string, type: "success" | "error" | "info") => void;
+  macros: MacroDef[];
 };
 
 type CalibrationState = {
   [key: string]: number;
 };
 
-function CalibrationPanel({ addToast }: CalibrationPanelProps) {
-  const [cal, setCal] = useState<CalibrationState>({
-    energy_min: 0,   energy_max: 1,
-    tension_min: 0,  tension_max: 1,
-    rhythm_density_min: 0, rhythm_density_max: 1,
-    atmosphere_min: 0, atmosphere_max: 1,
-  });
+function CalibrationPanel({ addToast, macros }: CalibrationPanelProps) {
+  const [cal, setCal] = useState<CalibrationState>({});
+
+  // Initialize calibration state when macros load
+  useEffect(() => {
+    const initialCal: CalibrationState = {};
+    macros.forEach((m) => {
+      initialCal[`${m.name}_min`] = 0;
+      initialCal[`${m.name}_max`] = 1;
+    });
+    setCal(initialCal);
+  }, [macros]);
 
   const handleApply = async () => {
     try {
@@ -456,28 +514,28 @@ function CalibrationPanel({ addToast }: CalibrationPanelProps) {
         Output Clamping Calibration
       </h3>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {MACROS.map(({ field, label }) => (
-          <div key={field} className="bg-gray-700/40 rounded-xl p-3 space-y-2">
-            <span className="text-sm font-semibold text-gray-300">{label}</span>
+        {macros.map((m) => (
+          <div key={m.name} className="bg-gray-700/40 rounded-xl p-3 space-y-2">
+            <span className="text-sm font-semibold text-gray-300">{m.name.replace("_", " ")}</span>
             <div className="flex items-center gap-2">
               <label className="text-xs text-gray-500 w-7">Min</label>
               <input
                 type="range" min={0} max={1} step={0.01}
-                value={cal[`${field}_min`]}
-                onChange={(e) => setCal((c) => ({ ...c, [`${field}_min`]: parseFloat(e.target.value) }))}
+                value={cal[`${m.name}_min`] ?? 0}
+                onChange={(e) => setCal((c) => ({ ...c, [`${m.name}_min`]: parseFloat(e.target.value) }))}
                 className="flex-1 h-1.5 accent-blue-500"
               />
-              <span className="text-xs font-mono text-gray-400 w-8">{cal[`${field}_min`].toFixed(2)}</span>
+              <span className="text-xs font-mono text-gray-400 w-8">{(cal[`${m.name}_min`] ?? 0).toFixed(2)}</span>
             </div>
             <div className="flex items-center gap-2">
               <label className="text-xs text-gray-500 w-7">Max</label>
               <input
                 type="range" min={0} max={1} step={0.01}
-                value={cal[`${field}_max`]}
-                onChange={(e) => setCal((c) => ({ ...c, [`${field}_max`]: parseFloat(e.target.value) }))}
+                value={cal[`${m.name}_max`] ?? 1}
+                onChange={(e) => setCal((c) => ({ ...c, [`${m.name}_max`]: parseFloat(e.target.value) }))}
                 className="flex-1 h-1.5 accent-purple-500"
               />
-              <span className="text-xs font-mono text-gray-400 w-8">{cal[`${field}_max`].toFixed(2)}</span>
+              <span className="text-xs font-mono text-gray-400 w-8">{(cal[`${m.name}_max`] ?? 1).toFixed(2)}</span>
             </div>
           </div>
         ))}

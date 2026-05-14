@@ -1,0 +1,79 @@
+[
+  {
+    "name": "energy",
+    "description": "Overall energy level and intensity",
+    "type": "numeric",
+    "category": "Music",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 0.5
+  },
+  {
+    "name": "tension",
+    "description": "Harmonic and rhythmic tension / buildup factor",
+    "type": "numeric",
+    "category": "Music",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 0.5
+  },
+  {
+    "name": "rhythm_density",
+    "description": "Density and complexity of rhythmic/percussive elements",
+    "type": "numeric",
+    "category": "Music",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 0.5
+  },
+  {
+    "name": "atmosphere",
+    "description": "Ambient, textural, and space-filling elements",
+    "type": "numeric",
+    "category": "Lights",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 0.5
+  },
+  {
+    "name": "brightness",
+    "description": "Overall spectral brightness and high-frequency content",
+    "type": "numeric",
+    "category": "Visual",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 0.5
+  },
+  {
+    "name": "industrial",
+    "description": "Degree of mechanical, distorted, or metallic textures",
+    "type": "numeric",
+    "category": "Music",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 0.0
+  },
+  {
+    "name": "glitch",
+    "description": "Frequency and intensity of rhythmic artifacts and stuttering",
+    "type": "numeric",
+    "category": "Visual",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 0.0
+  },
+  {
+    "name": "vibe",
+    "description": "A one or two-word descriptor of the current musical vibe",
+    "type": "string",
+    "category": "Music",
+    "default": "Neutral"
+  },
+  {
+    "name": "scene_description",
+    "description": "A short, evocative description of the visual/emotional scene",
+    "type": "string",
+    "category": "Visual",
+    "default": ""
+  }
+]

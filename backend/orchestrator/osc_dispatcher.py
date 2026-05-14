@@ -2,12 +2,13 @@
 OSC Dispatcher — sends macro values to Ableton Live and TouchDesigner via UDP.
 
 Each tick the InterpolationEngine calls dispatch() with the current MacroState.
-Two SimpleUDPClient instances (one per target) fire four OSC messages:
+Two SimpleUDPClient instances (one per target) fire one OSC message per variable:
 
-    /orchestrator/energy          <float>
-    /orchestrator/tension         <float>
-    /orchestrator/rhythm_density  <float>
-    /orchestrator/atmosphere      <float>
+    /orchestrator/<field_name>    <value>
+
+The field list is read dynamically from config.ALL_FIELDS on every dispatch call,
+so variables added or removed at runtime (via the Config dashboard) are reflected
+immediately without restarting the server.
 
 python-osc is fire-and-forget: if the target is not running no exception is raised.
 A startup log line confirms the configured addresses so the team can verify config
@@ -19,6 +20,7 @@ import os
 
 from pythonosc.udp_client import SimpleUDPClient
 
+from . import config
 from .models import MacroState
 
 logger = logging.getLogger(__name__)
@@ -46,9 +48,10 @@ class OscDispatcher:
         )
 
     def dispatch(self, state: MacroState) -> None:
-        """Broadcast all four macro values to both OSC targets."""
+        """Broadcast all macro values to both OSC targets."""
         for client in (self._ableton, self._td):
-            client.send_message(f"{_PREFIX}/energy", float(state.energy))
-            client.send_message(f"{_PREFIX}/tension", float(state.tension))
-            client.send_message(f"{_PREFIX}/rhythm_density", float(state.rhythm_density))
-            client.send_message(f"{_PREFIX}/atmosphere", float(state.atmosphere))
+            for field in config.ALL_FIELDS:
+                val = getattr(state, field, None)
+                if val is not None:
+                    # Send as float if it's numeric, or string if it's a string
+                    client.send_message(f"{_PREFIX}/{field}", val)
