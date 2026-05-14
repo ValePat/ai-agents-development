@@ -1,6 +1,6 @@
-# AI Agent Boilerplate — Next.js + FastAPI + MCP
+# Real-Time Show Orchestrator — Next.js + FastAPI + MCP + OSC
 
-A production-ready boilerplate for building AI agents with a **secure FastAPI backend** and a **modern Next.js frontend**. Features deep integration with the **Model Context Protocol (MCP)** for standardized, sandboxed agent tool access.
+A production-ready system for building semantic AI show control agents with a **secure FastAPI backend** and a **modern Next.js frontend**. Designed for live performance, it translates director prompts into real-time OSC signals for Ableton Live and TouchDesigner.
 
 ---
 
@@ -8,91 +8,33 @@ A production-ready boilerplate for building AI agents with a **secure FastAPI ba
 
 | Layer     | Technology                          | Role                                      |
 |-----------|-------------------------------------|-------------------------------------------|
-| **Frontend**  | Next.js 15+ (App Router) + Tailwind | Chat UI, user interaction                 |
-| **Backend**   | FastAPI + smolagents + LiteLLM      | Agent orchestration, API server           |
+| **Frontend**  | Next.js 15+ (App Router) + Tailwind | Director Console, Gauge Visuals           |
+| **Backend**   | FastAPI + smolagents + LiteLLM      | OSC Orchestration, API server             |
+| **Protocol**  | OSC (Open Sound Control)            | Real-time hardware/software control       |
 | **Protocol**  | MCP (Model Context Protocol)        | Standardized, sandboxed tool access       |
-| **LLM**       | OpenRouter (configurable)           | Model provider, supports many LLMs        |
+| **LLM**       | OpenRouter (Gemini Flash)           | Semantic prompt translation               |
 
 ---
 
-## 📂 Project Structure
-
-```text
-.
-├── backend/                  # FastAPI server, agent logic, MCP setup
-│   ├── agent_instructions.txt  # Behavioral rules injected into the agent
-│   ├── main.py               # Server entry point
-│   ├── mcp_servers.json      # Dynamic MCP server configuration
-│   └── sandbox/              # Restricted directory for agent file operations
-├── frontend/                 # Next.js web application
-│   ├── app/                  # App Router pages and layouts
-│   └── components/           # Reusable React components
-├── docs/                     # Detailed documentation
-│   ├── ARCHITECTURE.md       # System design and data flow
-│   ├── SAFETY.md             # Security and sandboxing guidelines
-│   └── PLANNING.md           # Roadmap and future features
-└── GEMINI.md                 # Instructions for AI agents working on this repo
-```
-
----
-
-## 🚀 Quick Start
-
-### Prerequisites
-- Python 3.11+
-- Node.js 20+
-- [OpenRouter](https://openrouter.ai/) API key
-
-### 1. Backend Setup
-```bash
-cd backend
-python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-```
-Create a `.env` in `backend/`:
-```env
-OPENROUTER_API_KEY=your_key_here
-MODEL_ID=openrouter/anthropic/claude-3-5-sonnet
-```
-Start the server:
-```bash
-python main.py
-```
-
-### 2. Frontend Setup
-```bash
-cd frontend
-npm install
-npm run dev
-```
-Access the UI at [http://localhost:3000](http://localhost:3000).
-
----
-
-## 🛡 Key Features
-- **Dynamic MCP Loading**: Easily extend agent capabilities via `mcp_servers.json`.
-- **Sandboxed Execution**: Agent operations are restricted to the `backend/sandbox` directory.
-- **Memory Integration**: Built-in support for persistent context via MCP Memory server.
-- **Provider Agnostic**: Switch LLMs easily using LiteLLM via OpenRouter.
-- **Modern UI**: Clean, responsive chat interface with Markdown support.
+## 🚀 Key Features
+- **Real-Time Interpolation**: 60 Hz smooth-easing engine for jitter-free transitions.
+- **Multi-Target OSC**: Simultaneous broadcast to Music (Ableton) and Visuals (TouchDesigner).
+- **Dynamic MCP Loading**: Retains infrastructure for filesystem and memory tools.
+- **Modern UI**: Polished director console with animated horizontal gauges.
 
 ---
 
 ## 🎯 Project Roadmap
 
 ### ✅ Completed
-- **Core Infrastructure**: FastAPI + smolagents + LiteLLM.
-- **MCP Integration**: Dynamic loading of filesystem and memory servers.
-- **Sandboxing**: Strict restriction to the `sandbox/` directory.
-- **Modern UI**: Next.js interface with Markdown support.
-- **Consolidated Docs**: Streamlined documentation into 3 core manuals.
+- **Single-Purpose Focus**: UI and API streamlined for the Orchestrator.
+- **OSC Integration**: Full support for numeric and string macro dispatch.
+- **MCP Infrastructure**: Dynamic loading of filesystem and memory servers.
 
 ### 🔄 In Progress / Planned
-- **Git MCP Integration**: Add tools for commit and branch management.
-- **Execution Sandbox**: Secure MCP server for code execution (Python/Node).
-- **App Templates**: Scaffolding for automatic project generation.
-- **Multi-Agent Orchestration**: Experimenting with Manager-Worker patterns.
+- **Memory MCP Integration**: Persistent director preferences and show motifs.
+- **Closed-Loop Feedback**: Reading state back from Ableton/TD via OSC MCP.
+- **Script-to-Scene**: Automatic transitions based on show scripts via Filesystem MCP.
 
 ---
 

@@ -159,6 +159,23 @@ TD_OSC_PORT=9001
 
 ---
 
+## Future MCP Integration
+
+While the Orchestrator currently uses a direct `litellm.completion()` call for efficiency, the backend retains a full MCP loading infrastructure. This allows for future expansion into more autonomous, context-aware behavior.
+
+### Suggested Roadmap
+1. **Memory MCP (`@modelcontextprotocol/server-memory`)**: 
+   - **Use Case**: Store director feedback, past performance notes, and recurring semantic motifs.
+   - **Integration**: Transition `llm_agent.py` to use a `smolagents.ToolCallingAgent` that can query the memory server before generating macro targets.
+2. **Filesystem MCP (`@modelcontextprotocol/server-filesystem`)**: 
+   - **Use Case**: Read show scripts, setlists, or technical riders directly from the `sandbox/` directory.
+   - **Integration**: Allow the agent to search for ".txt" or ".md" files in the sandbox to inform its "Vibe" and "Scene Description" generation.
+3. **Closed-Loop OSC Feedback**: 
+   - **Use Case**: Read back the *actual* current values from Ableton or TouchDesigner to verify the interpolation state.
+   - **Integration**: Develop a custom MCP server that listens for OSC feedback and exposes it as a tool (e.g., `get_current_live_state`).
+
+---
+
 ## Testing
 
 - **Unit**: `pytest` tests for `InterpolationEngine` step math (`smoothstep`, `lerp`) and easing curve correctness.

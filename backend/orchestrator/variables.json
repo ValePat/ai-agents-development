@@ -77,5 +77,15 @@
     "min": 0.0,
     "max": 100.0,
     "default": 0.5
+  },
+  {
+    "name": "test3",
+    "description": "testvariable",
+    "type": "numeric",
+    "category": "Music",
+    "min": 0.0,
+    "max": 3.0,
+    "default": 0,
+    "osc_path": ""
   }
 ]

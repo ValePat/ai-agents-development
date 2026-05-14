@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AI Agent Boilerplate",
-  description: "A modern boilerplate for building intelligent AI agents with Next.js, FastAPI, OpenRouter, and smolagents",
+  title: "Real-Time Show Orchestrator",
+  description: "A semantic control system for live performance using Next.js, FastAPI, and OSC",
 };
 
 export default function RootLayout({
@@ -30,22 +30,10 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-gray-950">
         {/* Global navigation bar */}
-        <nav className="flex-shrink-0 bg-gray-900 border-b border-gray-800 px-4 sm:px-6 py-2 flex items-center gap-6">
+        <nav className="flex-shrink-0 bg-gray-900 border-b border-gray-800 px-4 sm:px-6 py-2 flex items-center justify-between">
           <span className="text-sm font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">
-            AI Agent
+            SHOW ORCHESTRATOR
           </span>
-          <Link
-            href="/"
-            className="text-sm text-gray-400 hover:text-white transition-colors"
-          >
-            Chat
-          </Link>
-          <Link
-            href="/orchestrator"
-            className="text-sm text-gray-400 hover:text-white transition-colors"
-          >
-            Orchestrator
-          </Link>
           <Link
             href="/settings"
             className="text-sm text-gray-400 hover:text-white transition-colors"

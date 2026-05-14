@@ -14,6 +14,7 @@ WebSocket /ws               → stream OrchestratorStatus JSON at ~10 Hz
 """
 
 import logging
+from typing import Dict, Any
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 import asyncio
@@ -55,7 +56,7 @@ async def get_status() -> OrchestratorStatus:
 @router.post("/prompt", response_model=MacroTarget)
 async def post_prompt(request: PromptRequest) -> MacroTarget:
     """
-    Translate a semantic prompt via Gemini Flash → MacroTarget and set it on the engine.
+    Translate a semantic prompt via the agent → MacroTarget and set it on the engine.
 
     The returned MacroTarget is the LLM's interpretation (useful for the UI preview toast).
     """
@@ -63,9 +64,35 @@ async def post_prompt(request: PromptRequest) -> MacroTarget:
         raise HTTPException(status_code=503, detail="Orchestrator engine not initialised")
 
     try:
-        target = await translate_prompt(request.prompt, request.duration)
+        current_status = engine.get_status().model_dump()
+        target = await translate_prompt(request.prompt, request.duration, current_status)
     except LLMTranslationError as exc:
         logger.warning(f"LLM translation error: {exc}")
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    await engine.set_target(target)
+    return target
+
+
+@router.post("/target", response_model=MacroTarget)
+async def post_target(request: Dict[str, Any]) -> MacroTarget:
+    """
+    Set a target state directly (e.g. from a preset).
+    
+    Any fields in the request that don't match defined variables will be ignored
+    during interpolation, but we use the MacroTarget model for validation.
+    """
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Orchestrator engine not initialised")
+
+    # We use MacroTarget.model_validate to handle the dynamic schema.
+    # Because MacroState (base of MacroTarget) has extra="allow", 
+    # it won't fail on extra fields, which matches the user's requirement
+    # to ignore unbound variables.
+    try:
+        target = MacroTarget.model_validate(request)
+    except Exception as exc:
+        logger.warning(f"Target validation error: {exc}")
         raise HTTPException(status_code=422, detail=str(exc))
 
     await engine.set_target(target)

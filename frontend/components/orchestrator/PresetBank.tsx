@@ -9,6 +9,8 @@ type MacroDef = {
   category: "Visual" | "Lights" | "Music";
   min?: number;
   max?: number;
+  default?: any;
+  osc_path?: string;
 };
 
 type Preset = {
@@ -19,6 +21,8 @@ type Preset = {
 
 type PresetBankProps = {
   onLoad: (preset: Preset) => void;
+  currentState: Record<string, number>;
+  numericMacros: MacroDef[];
 };
 
 const STORAGE_KEY = "orchestrator_presets";
@@ -33,27 +37,12 @@ const DEFAULT_PRESETS: Preset[] = [
  * Preset bank — save/load named macro snapshots from localStorage.
  * Backed entirely by the browser; no backend state required.
  */
-export default function PresetBank({ onLoad }: PresetBankProps) {
+export default function PresetBank({ onLoad, currentState, numericMacros }: PresetBankProps) {
   const [presets, setPresets] = useState<Preset[]>([]);
-  const [numericMacros, setNumericMacros] = useState<MacroDef[]>([]);
   const [newName, setNewName] = useState("");
   const [saveDuration, setSaveDuration] = useState(4);
 
   useEffect(() => {
-    // Fetch numeric macros to know what to display in previews
-    const fetchVars = async () => {
-      try {
-        const res = await fetch("http://localhost:8000/orchestrator/variables");
-        if (res.ok) {
-          const data: MacroDef[] = await res.json();
-          setNumericMacros(data.filter(v => v.type === "numeric"));
-        }
-      } catch (err) {
-        console.error("Failed to fetch variables", err);
-      }
-    };
-    fetchVars();
-
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       setPresets(stored ? JSON.parse(stored) : DEFAULT_PRESETS);
@@ -77,7 +66,7 @@ export default function PresetBank({ onLoad }: PresetBankProps) {
         {presets.map((preset, i) => (
           <div
             key={i}
-            className="bg-gray-700/50 border border-gray-600 rounded-lg p-3 hover:border-purple-500/50 transition-all group"
+            className="bg-gray-700/50 border border-gray-600 rounded-lg p-3 hover:border-purple-500/50 transition-all group flex flex-col"
           >
             <div className="flex justify-between items-start mb-2">
               <span className="text-sm font-semibold text-white truncate">{preset.name}</span>
@@ -89,20 +78,27 @@ export default function PresetBank({ onLoad }: PresetBankProps) {
                 ✕
               </button>
             </div>
-            {/* Mini preview bars */}
-            <div className="space-y-1 mb-3">
-              {numericMacros.slice(0, 7).map((m) => (
-                <div key={m.name} className="flex items-center gap-1">
-                  <span className="text-gray-500 text-[8px] w-2">{m.name[0].toUpperCase()}</span>
-                  <div className="flex-1 h-1 bg-gray-600 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full"
-                      style={{ width: `${(preset.state[m.name] ?? 0.5) * 100}%` }}
-                    />
+
+            {/* Compact preview list */}
+            <div className="space-y-1 mb-3 flex-1">
+              {numericMacros.map((m) => {
+                const val = preset.state[m.name];
+                if (val === undefined) return null;
+                return (
+                  <div key={m.name} className="flex justify-between items-center text-[10px]">
+                    <span className="text-gray-400 truncate mr-1">{m.name.replace("_", " ")}</span>
+                    <span className="text-gray-200 font-mono">{val.toFixed(2)}</span>
                   </div>
+                );
+              })}
+              {/* Show warning if variables in preset are missing in current app */}
+              {Object.keys(preset.state).some(k => !numericMacros.find(m => m.name === k)) && (
+                <div className="text-[8px] text-amber-500/70 italic mt-1">
+                  * contains legacy variables
                 </div>
-              ))}
+              )}
             </div>
+
             <button
               onClick={() => onLoad(preset)}
               className="w-full text-xs py-1.5 bg-gradient-to-r from-blue-600/80 to-purple-600/80 hover:from-blue-500/80 hover:to-purple-500/80 text-white rounded-md font-semibold transition-all"
@@ -136,9 +132,15 @@ export default function PresetBank({ onLoad }: PresetBankProps) {
         <button
           disabled={!newName.trim()}
           onClick={() => {
+            // Capture CURRENT state of all numeric macros
             const newState: Record<string, number> = {};
             numericMacros.forEach(m => {
-              newState[m.name] = 0.5; // Default for dummy save
+              // Try to get from live state, then from the variable definition's default, 
+              // then hard fallback to 0.5
+              const liveVal = currentState[m.name];
+              newState[m.name] = (liveVal !== undefined && liveVal !== null) 
+                ? liveVal 
+                : (m.default !== undefined ? m.default : 0.5);
             });
             persist([...presets, { name: newName.trim(), state: newState, duration: saveDuration }]);
             setNewName("");
@@ -148,7 +150,8 @@ export default function PresetBank({ onLoad }: PresetBankProps) {
           Save
         </button>
       </div>
-      <p className="text-xs text-gray-600">Presets are stored in browser localStorage. To save current live values, open the console and load a preset first.</p>
+      <p className="text-xs text-gray-600">Presets are stored in browser localStorage and capture the current live values of all macros.</p>
     </div>
   );
 }
+

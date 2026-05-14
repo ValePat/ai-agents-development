@@ -12,6 +12,7 @@ type VariableDefinition = {
   min?: number;
   max?: number;
   default: any;
+  osc_path?: string;
 };
 
 export default function ConfigurationDashboard() {
@@ -29,6 +30,7 @@ export default function ConfigurationDashboard() {
     min: 0,
     max: 1,
     default: 0.5,
+    osc_path: "",
   });
 
   const fetchVariables = async () => {
@@ -235,6 +237,17 @@ export default function ConfigurationDashboard() {
                 </div>
               </div>
             )}
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">OSC Path (Optional)</label>
+              <input
+                type="text"
+                value={newVar.osc_path || ""}
+                onChange={(e) => setNewVar({ ...newVar, osc_path: e.target.value })}
+                placeholder="/custom/path"
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:border-purple-500"
+              />
+              <p className="text-[9px] text-gray-600 italic">Defaults to /orchestrator/{newVar.name || "name"}</p>
+            </div>
             <button
               onClick={() => handleSaveVariable(newVar)}
               disabled={!newVar.name || isSaving}

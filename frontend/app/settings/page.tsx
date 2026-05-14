@@ -6,17 +6,11 @@ const API_BASE = "http://localhost:8000";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-type ChatAgentSettings = {
-  model_id: string;
-  system_prompt: string;
-  max_steps: number;
-  temperature: number;
-};
-
 type OrchestratorSettings = {
   model_id: string;
-  system_prompt_prefix: string;
-  system_prompt_rules: string;
+  api_base: string;
+  system_prompt: string;
+  max_steps: number;
   temperature: number;
   max_tokens: number;
   tick_rate: number;
@@ -25,7 +19,6 @@ type OrchestratorSettings = {
 };
 
 type FullSettings = {
-  chat_agent: ChatAgentSettings;
   orchestrator: OrchestratorSettings;
 };
 
@@ -94,35 +87,6 @@ function TextArea({
       rows={rows}
       disabled={disabled}
       className={`w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:opacity-50 resize-y transition-colors ${mono ? "font-mono" : ""}`}
-    />
-  );
-}
-
-function NumberInput({
-  value,
-  onChange,
-  min,
-  max,
-  step,
-  disabled,
-}: {
-  value: number;
-  onChange: (v: number) => void;
-  min?: number;
-  max?: number;
-  step?: number;
-  disabled?: boolean;
-}) {
-  return (
-    <input
-      type="number"
-      value={value}
-      min={min}
-      max={max}
-      step={step ?? 1}
-      onChange={(e) => onChange(Number(e.target.value))}
-      disabled={disabled}
-      className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:opacity-50 transition-colors"
     />
   );
 }
@@ -254,10 +218,8 @@ function SaveButton({
 // ── Main Page ────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<"chat" | "orchestrator">("chat");
   const [settings, setSettings] = useState<FullSettings | null>(null);
   const [loading, setLoading] = useState(true);
-  const [savingChat, setSavingChat] = useState(false);
   const [savingOrch, setSavingOrch] = useState(false);
   const [suggestedModels, setSuggestedModels] = useState<string[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -292,39 +254,12 @@ export default function SettingsPage() {
   }, [addToast]);
 
   // ── Patch helpers ──────────────────────────────────────────────────────────
-  const patchChat = (patch: Partial<ChatAgentSettings>) => {
-    if (!settings) return;
-    setSettings({ ...settings, chat_agent: { ...settings.chat_agent, ...patch } });
-  };
-
   const patchOrch = (patch: Partial<OrchestratorSettings>) => {
     if (!settings) return;
     setSettings({ ...settings, orchestrator: { ...settings.orchestrator, ...patch } });
   };
 
   // ── Save handlers ──────────────────────────────────────────────────────────
-  const saveChat = async () => {
-    if (!settings) return;
-    setSavingChat(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/settings/chat-agent`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(settings.chat_agent),
-      });
-      if (res.ok) {
-        addToast("Chat agent settings saved. System prompt applied immediately.", "success");
-      } else {
-        const err = await res.json();
-        addToast(`Save failed: ${err.detail ?? res.statusText}`, "error");
-      }
-    } catch (e) {
-      addToast("Network error — is the backend running?", "error");
-    } finally {
-      setSavingChat(false);
-    }
-  };
-
   const saveOrch = async () => {
     if (!settings) return;
     setSavingOrch(true);
@@ -368,7 +303,7 @@ export default function SettingsPage() {
 
       {/* Page header */}
       <div className="border-b border-gray-800 px-6 py-4">
-        <h1 className="text-xl font-bold text-white">Fine-Tuning &amp; Configuration</h1>
+        <h1 className="text-xl font-bold text-white">Orchestrator Configuration</h1>
         <p className="text-xs text-gray-500 mt-0.5">
           Adjust agent instructions, model selection, and engine parameters. Changes persist to{" "}
           <code className="font-mono text-gray-400">backend/settings.json</code>.
@@ -386,102 +321,14 @@ export default function SettingsPage() {
         </div>
       ) : (
         <div className="max-w-4xl mx-auto px-6 py-6">
-          {/* Tabs */}
-          <div className="flex gap-1 mb-8 bg-gray-900 p-1 rounded-lg w-fit border border-gray-800">
-            {(
-              [
-                { key: "chat", label: "Chat Agent" },
-                { key: "orchestrator", label: "Orchestrator LLM" },
-              ] as const
-            ).map(({ key, label }) => (
-              <button
-                key={key}
-                onClick={() => setActiveTab(key)}
-                className={`px-5 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                  activeTab === key
-                    ? "bg-gray-700 text-white"
-                    : "text-gray-400 hover:text-white"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {/* ── Chat Agent Tab ──────────────────────────────────────────────── */}
-          {activeTab === "chat" && (
-            <div className="space-y-8">
-              {/* Model */}
-              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-                <SectionHeader
-                  title="Model Selection"
-                  subtitle="The smolagents ToolCallingAgent model. A restart is needed to hot-swap the model."
-                />
-                <Label note="openrouter/{provider}/{model}">Model ID</Label>
-                <ModelSelector
-                  value={settings.chat_agent.model_id}
-                  onChange={(v) => patchChat({ model_id: v })}
-                  suggestions={suggestedModels}
-                />
-              </div>
-
-              {/* Sampling */}
-              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-5">
-                <SectionHeader
-                  title="Sampling Parameters"
-                  subtitle="Controls the randomness and depth of the agent's reasoning."
-                />
-                <SliderRow
-                  label="Temperature"
-                  value={settings.chat_agent.temperature}
-                  onChange={(v) => patchChat({ temperature: v })}
-                  min={0}
-                  max={2}
-                  step={0.05}
-                  note="Higher = more creative, lower = more deterministic"
-                />
-                <SliderRow
-                  label="Max Steps"
-                  value={settings.chat_agent.max_steps}
-                  onChange={(v) => patchChat({ max_steps: v })}
-                  min={1}
-                  max={50}
-                  step={1}
-                  note="Maximum tool-call iterations per request"
-                />
-              </div>
-
-              {/* System Prompt */}
-              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-                <SectionHeader
-                  title="System Prompt"
-                  subtitle="Full instructions injected into the chat agent at startup. Applied immediately on save — no restart needed."
-                />
-                <Label>Instructions</Label>
-                <TextArea
-                  value={settings.chat_agent.system_prompt}
-                  onChange={(v) => patchChat({ system_prompt: v })}
-                  rows={16}
-                  mono
-                />
-                <p className="text-xs text-gray-500 mt-2">
-                  Tip: You can reference <code className="text-gray-400 font-mono">{"{{SAFE_DIR}}"}</code> for the sandboxed filesystem path.
-                </p>
-              </div>
-
-              <SaveButton onClick={saveChat} saving={savingChat} />
-            </div>
-          )}
-
-          {/* ── Orchestrator LLM Tab ─────────────────────────────────────────── */}
-          {activeTab === "orchestrator" && (
-            <div className="space-y-8">
-              {/* Model */}
-              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-                <SectionHeader
-                  title="LLM Model Selection"
-                  subtitle="The model used for semantic prompt → macro target translation. Applied immediately on save."
-                />
+          <div className="space-y-8">
+            {/* Model */}
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-5">
+              <SectionHeader
+                title="LLM Model Selection"
+                subtitle="The model used for semantic prompt → macro target translation. Applied immediately on save."
+              />
+              <div>
                 <Label note="openrouter/{provider}/{model}">Model ID</Label>
                 <ModelSelector
                   value={settings.orchestrator.model_id}
@@ -489,117 +336,113 @@ export default function SettingsPage() {
                   suggestions={suggestedModels}
                 />
               </div>
-
-              {/* Sampling */}
-              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-5">
-                <SectionHeader
-                  title="LLM Sampling Parameters"
-                  subtitle="Applied immediately to every subsequent /orchestrator/prompt request."
-                />
-                <SliderRow
-                  label="Temperature"
-                  value={settings.orchestrator.temperature}
-                  onChange={(v) => patchOrch({ temperature: v })}
-                  min={0}
-                  max={2}
-                  step={0.05}
-                  note="Lower = more predictable macro output"
-                />
-                <SliderRow
-                  label="Max Tokens"
-                  value={settings.orchestrator.max_tokens}
-                  onChange={(v) => patchOrch({ max_tokens: v })}
-                  min={64}
-                  max={4096}
-                  step={64}
-                  note="Maximum tokens in the LLM response"
+              <div>
+                <Label note="Provider API endpoint">API Base URL</Label>
+                <TextInput
+                  value={settings.orchestrator.api_base}
+                  onChange={(v) => patchOrch({ api_base: v })}
+                  placeholder="https://openrouter.ai/api/v1"
                 />
               </div>
-
-              {/* Transition settings */}
-              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-5">
-                <SectionHeader
-                  title="Interpolation Engine"
-                  subtitle="Low-level engine timing. tick_rate and duration changes are persisted; tick_rate requires a restart."
-                />
-                <SliderRow
-                  label="Tick Rate (Hz)"
-                  value={settings.orchestrator.tick_rate}
-                  onChange={(v) => patchOrch({ tick_rate: v })}
-                  min={10}
-                  max={120}
-                  step={10}
-                  note="Interpolation loop frequency — restart required"
-                />
-                <SliderRow
-                  label="Default Transition Duration (s)"
-                  value={settings.orchestrator.default_transition_duration}
-                  onChange={(v) => patchOrch({ default_transition_duration: v })}
-                  min={0.1}
-                  max={120}
-                  step={0.5}
-                  note="Fallback duration when LLM omits it"
-                />
-                <SliderRow
-                  label="Min Transition Duration (s)"
-                  value={settings.orchestrator.min_transition_duration}
-                  onChange={(v) => patchOrch({ min_transition_duration: v })}
-                  min={0.1}
-                  max={10}
-                  step={0.1}
-                  note="Floor for LLM-suggested or override durations"
-                />
-              </div>
-
-              {/* System Prompt Prefix */}
-              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-5">
-                <SectionHeader
-                  title="System Prompt Personalisation"
-                  subtitle="The prompt is built dynamically: prefix + field list + rules. Edit each section independently."
-                />
-                <div>
-                  <Label>Prefix (persona &amp; framing)</Label>
-                  <TextArea
-                    value={settings.orchestrator.system_prompt_prefix}
-                    onChange={(v) => patchOrch({ system_prompt_prefix: v })}
-                    rows={5}
-                    mono
-                  />
-                  <p className="text-xs text-gray-500 mt-1.5">
-                    Injected before the auto-generated macro field list. Define the LLM persona here.
-                  </p>
-                </div>
-
-                <div>
-                  <Label>Output Rules</Label>
-                  <TextArea
-                    value={settings.orchestrator.system_prompt_rules}
-                    onChange={(v) => patchOrch({ system_prompt_rules: v })}
-                    rows={5}
-                    mono
-                  />
-                  <p className="text-xs text-gray-500 mt-1.5">
-                    Appended after the field list. Enforce output format constraints here.
-                  </p>
-                </div>
-
-                {/* Live preview */}
-                <div>
-                  <p className="text-xs font-medium text-gray-400 mb-2">Compiled prompt preview</p>
-                  <div className="bg-gray-950 border border-gray-700 rounded-lg p-3 text-xs text-gray-400 font-mono whitespace-pre-wrap max-h-48 overflow-y-auto leading-relaxed">
-                    {settings.orchestrator.system_prompt_prefix}
-                    <span className="text-yellow-600/70">
-                      {"[...auto-generated macro field list from /orchestrator/variables...]"}
-                    </span>
-                    {"\n"}
-                    {settings.orchestrator.system_prompt_rules}
-                  </div>
-                </div>
-              </div>
-
-              <SaveButton onClick={saveOrch} saving={savingOrch} />
             </div>
-          )}
+
+            {/* Sampling */}
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-5">
+              <SectionHeader
+                title="LLM Sampling Parameters"
+                subtitle="Applied immediately to every subsequent /orchestrator/prompt request."
+              />
+              <SliderRow
+                label="Temperature"
+                value={settings.orchestrator.temperature}
+                onChange={(v) => patchOrch({ temperature: v })}
+                min={0}
+                max={2}
+                step={0.05}
+                note="Lower = more predictable macro output"
+              />
+              <SliderRow
+                label="Max Tokens"
+                value={settings.orchestrator.max_tokens}
+                onChange={(v) => patchOrch({ max_tokens: v })}
+                min={64}
+                max={4096}
+                step={64}
+                note="Maximum tokens in the LLM response"
+              />
+              <SliderRow
+                label="Max Reasoning Steps"
+                value={settings.orchestrator.max_steps}
+                onChange={(v) => patchOrch({ max_steps: v })}
+                min={1}
+                max={50}
+                step={1}
+                note="Maximum tool-call iterations per request"
+              />
+            </div>
+
+            {/* System Prompt */}
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <SectionHeader
+                title="System Prompt"
+                subtitle="Full instructions for the orchestrator agent. The macro field list is automatically appended."
+              />
+              <Label>Instructions</Label>
+              <TextArea
+                value={settings.orchestrator.system_prompt}
+                onChange={(v) => patchOrch({ system_prompt: v })}
+                rows={16}
+                mono
+              />
+              <div className="mt-3 space-y-2">
+                <p className="text-xs text-gray-500">
+                  Available Placeholders:
+                </p>
+                <ul className="text-[10px] font-mono text-gray-400 list-disc list-inside space-y-1">
+                  <li><code className="text-blue-400">{"{{VARIABLE_DEFINITIONS}}"}</code> - Dynamically generated list of macros from the Config page.</li>
+                  <li><code className="text-blue-400">{"{{CURRENT_STATE}}"}</code> - Current numeric and string values of the show macros.</li>
+                  <li><code className="text-blue-400">{"{{SAFE_DIR}}"}</code> - Absolute path to the sandboxed filesystem (for tools).</li>
+                </ul>
+              </div>
+            </div>
+
+            {/* Transition settings */}
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-5">
+              <SectionHeader
+                title="Interpolation Engine"
+                subtitle="Low-level engine timing. tick_rate and duration changes are persisted; tick_rate requires a restart."
+              />
+              <SliderRow
+                label="Tick Rate (Hz)"
+                value={settings.orchestrator.tick_rate}
+                onChange={(v) => patchOrch({ tick_rate: v })}
+                min={10}
+                max={120}
+                step={10}
+                note="Interpolation loop frequency — restart required"
+              />
+              <SliderRow
+                label="Default Transition Duration (s)"
+                value={settings.orchestrator.default_transition_duration}
+                onChange={(v) => patchOrch({ default_transition_duration: v })}
+                min={0.1}
+                max={120}
+                step={0.5}
+                note="Fallback duration when LLM omits it"
+              />
+              <SliderRow
+                label="Min Transition Duration (s)"
+                value={settings.orchestrator.min_transition_duration}
+                onChange={(v) => patchOrch({ min_transition_duration: v })}
+                min={0.1}
+                max={10}
+                step={0.1}
+                note="Floor for LLM-suggested or override durations"
+              />
+            </div>
+
+            <SaveButton onClick={saveOrch} saving={savingOrch} />
+          </div>
         </div>
       )}
     </div>

@@ -105,7 +105,7 @@ export default function OverrideSlider({
         </span>
         <div className="flex items-center gap-3">
           <span className="text-base font-mono font-bold text-white tabular-nums min-w-[3rem] text-right">
-            {displayValue.toFixed(max > 1 ? 0 : 2)}
+            {displayValue.toFixed(2)}
           </span>
           <button
             onClick={handleRelease}
@@ -125,7 +125,7 @@ export default function OverrideSlider({
         type="range"
         min={min}
         max={max}
-        step={max > 1 ? 1 : 0.01}
+        step={0.01}
         value={displayValue}
         onChange={handleChange}
         onPointerDown={handlePointerDown}

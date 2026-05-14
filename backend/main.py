@@ -10,7 +10,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-from smolagents import LiteLLMModel, ToolCallingAgent
 from smolagents.tools import ToolCollection
 from mcp import StdioServerParameters
 
@@ -55,19 +54,18 @@ def _bootstrap_settings_env() -> None:
             os.environ["ORCHESTRATOR_TEMPERATURE"] = str(orch["temperature"])
         if "max_tokens" in orch and not os.getenv("ORCHESTRATOR_MAX_TOKENS"):
             os.environ["ORCHESTRATOR_MAX_TOKENS"] = str(orch["max_tokens"])
-        chat = s.get("chat_agent", {})
-        if "model_id" in chat and not os.getenv("MODEL_ID"):
-            os.environ["MODEL_ID"] = chat["model_id"]
+        if "max_steps" in orch and not os.getenv("ORCHESTRATOR_MAX_STEPS"):
+            os.environ["ORCHESTRATOR_MAX_STEPS"] = str(orch["max_steps"])
     except Exception:
         pass  # Non-fatal; defaults still apply
 
 _bootstrap_settings_env()
 
 # -------------------- GLOBALS --------------------
-# The agent is initialized once at startup and reused for all requests.
-agent = None
+# The MCP tools are initialized once at startup and made available for the orchestrator agent.
+mcp_tools = []
 
-# The interpolation engine singleton — started in lifespan, same pattern as `agent`.
+# The interpolation engine singleton — started in lifespan.
 interpolation_engine: InterpolationEngine | None = None
 
 # AsyncExitStack manages the lifecycle of multiple asynchronous context managers.
@@ -80,39 +78,18 @@ exit_stack = AsyncExitStack()
 SAFE_DIR = os.path.abspath("sandbox")
 os.makedirs(SAFE_DIR, exist_ok=True)
 
-# -------------------- FASTAPI LIFESPAN --------------------
-# The lifespan function handles logic that runs on server startup and shutdown.
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global agent, exit_stack, interpolation_engine
-
-    # Retrieve environment variables for the LLM model.
-    OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-    MODEL_ID = os.getenv(
-        "MODEL_ID",
-        "openrouter/anthropic/claude-3-5-sonnet"
-    )
-
-    if not OPENROUTER_API_KEY:
-        logger.warning("OPENROUTER_API_KEY not found in environment")
+    global mcp_tools, exit_stack, interpolation_engine
 
     # -------- ORCHESTRATOR ENGINE STARTUP --------
-    # Start the 60 Hz interpolation engine independently of the chat agent.
-    # This ensures the orchestrator works even if MCP tools fail to load.
+    # Start the 60 Hz interpolation engine.
     interpolation_engine = InterpolationEngine()
     orchestrator_router_module.engine = interpolation_engine
     interpolation_engine.start()
     logger.info("✓ Orchestrator interpolation engine started.")
 
     try:
-        # -------- LLM MODEL SETUP --------
-        # Initialize the model using LiteLLM via OpenRouter.
-        model = LiteLLMModel(
-            model_id=MODEL_ID,
-            api_key=OPENROUTER_API_KEY,
-            api_base="https://openrouter.ai/api/v1"
-        )
-
         # -------- DYNAMIC MCP SERVER LOADING --------
         # We load MCP server configurations from an external JSON file.
         mcp_config_path = os.path.join(os.path.dirname(__file__), "mcp_servers.json")
@@ -155,30 +132,13 @@ async def lifespan(app: FastAPI):
         else:
             logger.warning(f"MCP config not found at {mcp_config_path}")
 
-        # -------- AGENT INITIALIZATION --------
-        # If no tools were loaded, the agent won't be very useful.
-        if not all_tools:
-            raise RuntimeError("❌ No MCP tools loaded from any server; agent cannot perform actions.")
+        # Expose tools globally for orchestrator
+        mcp_tools = all_tools
 
-        logger.info(f"✓ Total MCP tools available: {[t.name for t in all_tools]}")
-
-        # Load system instructions from a text file to define the agent's personality/rules.
-        instructions_path = os.path.join(os.path.dirname(__file__), "agent_instructions.txt")
-        if os.path.exists(instructions_path):
-            with open(instructions_path, "r", encoding="utf-8") as f:
-                agent_instructions = f.read()
+        if all_tools:
+            logger.info(f"✓ Total MCP tools available: {[t.name for t in all_tools]}")
         else:
-            agent_instructions = "You are a helpful AI assistant."
-
-        # Create the ToolCallingAgent with the collected tools and LLM model.
-        agent = ToolCallingAgent(
-            tools=all_tools,
-            model=model
-        )
-        # Inject the custom system prompt.
-        agent.prompt_templates["system_prompt"] = agent_instructions
-
-        logger.info("✓ Agent initialized and ready for chat.")
+            logger.warning("⚠️ No MCP tools loaded; orchestrator agent will have no tool capabilities.")
 
         yield # The application runs while this yield is active.
 
@@ -193,13 +153,13 @@ async def lifespan(app: FastAPI):
             interpolation_engine.stop()
         # Close all MCP server connections and cleanup resources.
         await exit_stack.aclose()
-        agent = None
+        mcp_tools = []
         logger.info("✓ Shutdown complete; all MCP connections closed.")
 
 
 # -------------------- FASTAPI APPLICATION --------------------
 app = FastAPI(
-    title="AI Agent API (Dynamic MCP)",
+    title="Show Orchestrator API",
     lifespan=lifespan
 )
 
@@ -218,75 +178,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# -------------------- DATA SCHEMAS (PYDANTIC) --------------------
-# Request schema for the chat endpoint.
-class ChatRequest(BaseModel):
-    message: str
-    history: Optional[List[dict]] = None
-
-# Response schema for the chat endpoint.
-class ChatResponse(BaseModel):
-    response: str
-    tools_used: Optional[List[str]] = None
-
-
 # -------------------- API ROUTES --------------------
 
 @app.get("/")
 async def root():
     """Simple health check endpoint."""
-    return {"message": "AI Agent with Dynamic MCP is running"}
-
-
-@app.get("/api/tools")
-async def list_tools():
-    """Returns a list of tools available to the agent."""
-    global agent
-    if agent is None:
-        return {"tools": []}
-    return {"tools": [tool.name for tool in agent.tools.values()]}
-
-
-@app.post("/api/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
-    """
-    Primary chat endpoint. Passes the user message to the smolagents agent.
-    Runs the agent in a separate thread to avoid blocking the main async loop.
-    """
-    global agent
-
-    if agent is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Agent not initialized (startup may have failed)"
-        )
-
-    try:
-        logger.info(f"User Request: {request.message}")
-        
-        # Construct the prompt with history if available for short-term context.
-        prompt = request.message
-        if request.history:
-            history_str = "\n".join([f"{m['role']}: {m['content']}" for m in request.history])
-            prompt = f"Previous conversation:\n{history_str}\n\nUser: {request.message}"
-
-        # agent.run is a blocking call, so we wrap it in to_thread for async compatibility.
-        result = await asyncio.to_thread(
-            agent.run,
-            prompt
-        )
-
-        return ChatResponse(
-            response=str(result),
-            tools_used=[t.name for t in agent.tools.values()] # Returning all available tools for now
-        )
-
-    except Exception as e:
-        logger.error(f"Chat execution error: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=str(e)
-        )
+    return {"message": "Show Orchestrator API is running"}
 
 
 # -------------------- SERVER ENTRYPOINT --------------------

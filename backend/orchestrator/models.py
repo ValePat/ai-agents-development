@@ -17,6 +17,7 @@ class VariableDefinition(BaseModel):
     min: Optional[float] = 0.0
     max: Optional[float] = 1.0
     default: Any = 0.5
+    osc_path: Optional[str] = None
 
 
 def create_macro_state_model() -> Type[BaseModel]:

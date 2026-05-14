@@ -63,7 +63,7 @@ export default function MacroGauge({
             </span>
           )}
           <span className="text-lg font-mono font-bold text-white tabular-nums min-w-[3rem] text-right">
-            {value.toFixed(max > 1 ? 0 : 2)}
+            {value.toFixed(2)}
           </span>
         </div>
       </div>

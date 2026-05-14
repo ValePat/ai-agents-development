@@ -1,35 +1,26 @@
 """
 LLM Agent for macro translation.
 
-Calls Gemini Flash (via OpenRouter + LiteLLM) with response_format=json_object.
+Uses smolagents.ToolCallingAgent with MCP tools and LiteLLM.
 Returns a validated MacroTarget from a semantic show-direction prompt.
-
-Usage
------
-    from orchestrator.llm_agent import translate_prompt
-
-    target = await translate_prompt("Build tension towards a climax over 8 seconds")
-
-Design notes
-------------
-- litellm.completion() is synchronous; wrapped in asyncio.to_thread.
-- JSON mode is used (not function-calling) for reliability with Gemini Flash.
-- All returned float values are clamped to [0.0, 1.0] as a safety measure.
-- LLMTranslationError is raised on parse failure so the router returns HTTP 422.
 """
 
 import asyncio
 import json
 import logging
 import os
+import re
 from typing import Any
 
-import litellm
+from smolagents import LiteLLMModel, ToolCallingAgent
 
 logger = logging.getLogger(__name__)
 
 # Silence verbose LiteLLM HTTP logs
 logging.getLogger("LiteLLM").setLevel(logging.WARNING)
+
+class LLMTranslationError(Exception):
+    """Raised when the LLM response cannot be parsed into a valid MacroTarget."""
 
 def _load_orchestrator_settings() -> dict:
     """Load orchestrator settings from settings.json if available."""
@@ -40,117 +31,128 @@ def _load_orchestrator_settings() -> dict:
     except Exception:
         return {}
 
-
-def _build_system_prompt() -> str:
-    """Build the system prompt dynamically from config and settings."""
+def _get_variable_definitions_text() -> str:
+    """Generate a string representation of macro variables for the prompt."""
     from .config import load_variables
-
-    settings = _load_orchestrator_settings()
     variables = load_variables()
     
-    prefix = settings.get(
-        "system_prompt_prefix",
-        "You are a musical macro translator for a live show conductor system.\n"
-        "Given a plain-language description of the desired show state, return ONLY a JSON object\n"
-        "with the following fields:\n\n",
-    )
-    rules = settings.get(
-        "system_prompt_rules",
-        "- Output ONLY the JSON object. No explanations, no markdown, no code blocks.\n"
-        "- All numeric values must stay within their specified ranges.\n"
-        "- duration must be a positive number (minimum 0.5).\n"
-        "- Interpret the prompt creatively but literally for the intended live-show context.",
-    )
-
-    prompt = prefix
-    prompt += "Numeric fields:\n"
+    text = "Numeric fields (Float [min, max]):\n"
     for v in variables:
         if v["type"] == "numeric":
             v_min = v.get("min", 0.0)
             v_max = v.get("max", 1.0)
-            prompt += f'- "{v["name"]}": {v["description"]} (Range: [{v_min}, {v_max}])\n'
+            text += f'- "{v["name"]}": {v["description"]} (Range: [{v_min}, {v_max}])\n'
 
-    prompt += "\nString fields (short expressive descriptions):\n"
+    text += "\nString fields (Short descriptions):\n"
     for v in variables:
         if v["type"] == "string":
-            prompt += f'- "{v["name"]}": {v["description"]}\n'
+            text += f'- "{v["name"]}": {v["description"]}\n'
 
-    prompt += '\n- "duration": Transition duration in seconds (typically 2–16 s)\n'
+    text += '\n- "duration": Transition duration in seconds (Float, typically 2.0-16.0)\n'
+    return text
 
-    prompt += "\nRules:\n"
-    prompt += rules + "\n"
+def _extract_json(text: str) -> dict:
+    """Extract the first valid JSON object from the text."""
+    # Try to find JSON in markdown blocks first
+    match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(1))
+        except json.JSONDecodeError:
+            pass
+            
+    # Fallback: try to find anything between { and }
+    match = re.search(r"(\{.*\})", text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(1))
+        except json.JSONDecodeError:
+            pass
+            
+    # Last resort: just try to parse the whole thing
+    return json.loads(text)
 
-    return prompt
+def _call_agent(user_prompt: str, current_status: dict | None = None) -> dict[str, Any]:
+    """Synchronous agent call — run via asyncio.to_thread."""
+    import main as main_module
+    
+    settings = _load_orchestrator_settings()
+    
+    model_id = os.getenv("ORCHESTRATOR_MODEL_ID", settings.get("model_id"))
+    api_key = os.getenv("OPENROUTER_API_KEY", "")
+    api_base = settings.get("api_base", "https://openrouter.ai/api/v1")
+    
+    if not model_id:
+        raise LLMTranslationError("ORCHESTRATOR_MODEL_ID not configured in settings or environment.")
 
-
-class LLMTranslationError(Exception):
-    """Raised when the LLM response cannot be parsed into a valid MacroTarget."""
-
-
-def _call_llm(prompt: str, model_id: str, api_key: str) -> dict[str, Any]:
-    """Synchronous LiteLLM call — run via asyncio.to_thread."""
-    system_prompt = _build_system_prompt()
-
-    # Allow runtime overrides from config_router (written to env vars)
     try:
-        temperature = float(os.getenv("ORCHESTRATOR_TEMPERATURE", "0.4"))
+        temperature = float(os.getenv("ORCHESTRATOR_TEMPERATURE", str(settings.get("temperature", 0.4))))
     except ValueError:
         temperature = 0.4
+        
     try:
-        max_tokens = int(os.getenv("ORCHESTRATOR_MAX_TOKENS", "512"))
+        max_steps = int(os.getenv("ORCHESTRATOR_MAX_STEPS", str(settings.get("max_steps", 10))))
     except ValueError:
-        max_tokens = 512
+        max_steps = 10
 
-    response = litellm.completion(
-        model=model_id,
+    model = LiteLLMModel(
+        model_id=model_id,
         api_key=api_key,
-        api_base="https://openrouter.ai/api/v1",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt},
-        ],
-        response_format={"type": "json_object"},
-        temperature=temperature,
-        max_tokens=max_tokens,
+        api_base=api_base,
+        temperature=temperature
     )
-    raw = response.choices[0].message.content or ""
-    return json.loads(raw)
+    
+    agent = ToolCallingAgent(
+        tools=main_module.mcp_tools,
+        model=model,
+        max_steps=max_steps
+    )
+    
+    # ── PROMPT CONSTRUCTION (Strictly Driven by Settings) ──
+    raw_system_prompt = settings.get("system_prompt", "You are a macro translator.")
+    
+    # Replace placeholders
+    var_defs = _get_variable_definitions_text()
+    curr_state = json.dumps(current_status.get("current_values", {}), indent=2) if current_status else "{}"
+    
+    system_prompt = raw_system_prompt.replace("{{VARIABLE_DEFINITIONS}}", var_defs)
+    system_prompt = system_prompt.replace("{{CURRENT_STATE}}", curr_state)
+    
+    # ── LOGGING: Output exact system prompt to console ──
+    print("\n" + "="*80)
+    print("FINAL COMPILED SYSTEM PROMPT:")
+    print("-"*80)
+    print(system_prompt)
+    print("="*80 + "\n")
 
+    # smolagents uses 'system_prompt' as its core instruction set
+    agent.prompt_templates["system_prompt"] = system_prompt
+    
+    # Run the agent with the user's specific request
+    # Note: We don't wrap the user_prompt in any hardcoded context here.
+    # The instructions on what to return should be in the system_prompt.
+    result = agent.run(user_prompt)
+    
+    if isinstance(result, dict):
+        return result
+    
+    try:
+        return _extract_json(str(result))
+    except Exception as exc:
+        raise LLMTranslationError(f"Failed to parse JSON from agent. Final answer was: {result}")
 
-async def translate_prompt(prompt: str, duration_override: float | None = None) -> Any:
+async def translate_prompt(prompt: str, duration_override: float | None = None, current_status: dict | None = None) -> Any:
     """
     Translate a semantic show-direction prompt into a MacroTarget.
-
-    Parameters
-    ----------
-    prompt:
-        Natural-language show direction, e.g. "Build to a climax over 8 seconds".
-    duration_override:
-        If provided, replaces the LLM-suggested duration (for UI slider control).
-
-    Raises
-    ------
-    LLMTranslationError
-        When the LLM output cannot be parsed or validated.
     """
     from .models import MacroTarget
     from .config import load_variables
     
-    model_id = os.getenv(
-        "ORCHESTRATOR_MODEL_ID",
-        "openrouter/google/gemini-3.1-flash-lite"
-    )
-    api_key = os.getenv("OPENROUTER_API_KEY", "")
-
-    if not api_key:
-        logger.warning("OPENROUTER_API_KEY not set; LLM call will likely fail")
-
     try:
-        data = await asyncio.to_thread(_call_llm, prompt, model_id, api_key)
-    except json.JSONDecodeError as exc:
-        raise LLMTranslationError(f"LLM returned non-JSON: {exc}") from exc
+        data = await asyncio.to_thread(_call_agent, prompt, current_status)
     except Exception as exc:
-        raise LLMTranslationError(f"LLM call failed: {exc}") from exc
+        logger.error(f"Agent call failed: {exc}")
+        raise LLMTranslationError(str(exc)) from exc
 
     # Load variable definitions for clamping
     variables = load_variables()
@@ -176,9 +178,12 @@ async def translate_prompt(prompt: str, duration_override: float | None = None) 
             data["duration"] = 4.0
 
     try:
-        target = MacroTarget(**data)
+        # Filter extra fields
+        valid_fields = set(ranges.keys()) | {v["name"] for v in variables if v["type"] == "string"} | {"duration"}
+        filtered_data = {k: v for k, v in data.items() if k in valid_fields}
+        target = MacroTarget(**filtered_data)
     except Exception as exc:
         raise LLMTranslationError(f"MacroTarget validation failed: {exc}") from exc
 
-    logger.info(f"LLM translated prompt → {target.model_dump()}")
+    logger.info(f"Agent translated prompt → {target.model_dump()}")
     return target

@@ -53,5 +53,6 @@ class OscDispatcher:
             for field in config.ALL_FIELDS:
                 val = getattr(state, field, None)
                 if val is not None:
-                    # Send as float if it's numeric, or string if it's a string
-                    client.send_message(f"{_PREFIX}/{field}", val)
+                    # Use custom OSC path if defined, else default to /orchestrator/<name>
+                    addr = config.OSC_PATHS.get(field) or f"{_PREFIX}/{field}"
+                    client.send_message(addr, val)

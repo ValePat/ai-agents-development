@@ -23,27 +23,31 @@ def save_variables(variables: List[Dict[str, Any]]) -> None:
 
 def get_macro_config():
     """
-    Returns dictionaries of numeric and string macro fields.
-    Re-evaluates the JSON file on each call (or we can cache it).
+    Returns dictionaries of numeric and string macro fields,
+    and a mapping for custom OSC paths.
     """
     vars_list = load_variables()
     numeric = {}
     string = {}
+    osc_paths = {}
     
     for v in vars_list:
         if v["type"] == "numeric":
             numeric[v["name"]] = v["description"]
         else:
             string[v["name"]] = v["description"]
+        
+        if v.get("osc_path"):
+            osc_paths[v["name"]] = v["osc_path"]
             
-    return numeric, string
+    return numeric, string, osc_paths
 
 # For backward compatibility and initial load
-MACRO_NUMERIC_FIELDS, MACRO_STRING_FIELDS = get_macro_config()
+MACRO_NUMERIC_FIELDS, MACRO_STRING_FIELDS, OSC_PATHS = get_macro_config()
 ALL_FIELDS = list(MACRO_NUMERIC_FIELDS.keys()) + list(MACRO_STRING_FIELDS.keys())
 
 def refresh_config():
     """Update the global field lists (useful if variables change at runtime)."""
-    global MACRO_NUMERIC_FIELDS, MACRO_STRING_FIELDS, ALL_FIELDS
-    MACRO_NUMERIC_FIELDS, MACRO_STRING_FIELDS = get_macro_config()
+    global MACRO_NUMERIC_FIELDS, MACRO_STRING_FIELDS, ALL_FIELDS, OSC_PATHS
+    MACRO_NUMERIC_FIELDS, MACRO_STRING_FIELDS, OSC_PATHS = get_macro_config()
     ALL_FIELDS = list(MACRO_NUMERIC_FIELDS.keys()) + list(MACRO_STRING_FIELDS.keys())

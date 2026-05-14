@@ -39,10 +39,19 @@ def _lerp(a: float, b: float, t: float) -> float:
 class _CalibrationRange:
     min_val: float = 0.0
     max_val: float = 1.0
+    native_min: float = 0.0
+    native_max: float = 1.0
 
     def apply(self, v: float) -> float:
-        """Map normalised [0,1] → [min_val, max_val]."""
-        return self.min_val + v * (self.max_val - self.min_val)
+        """
+        Map value from native range [native_min, native_max] 
+        to calibrated output range [min_val, max_val].
+        """
+        # 1. Normalize native value to [0, 1]
+        denom = (self.native_max - self.native_min)
+        norm_v = (v - self.native_min) / denom if denom != 0 else 0.0
+        # 2. Map to calibrated range
+        return self.min_val + norm_v * (self.max_val - self.min_val)
 
 
 class InterpolationEngine:
@@ -80,7 +89,12 @@ class InterpolationEngine:
         }
         
         self._calibration: dict[str, _CalibrationRange] = {
-            f: _CalibrationRange() for f in self._ranges.keys()
+            f: _CalibrationRange(
+                min_val=v_min, 
+                max_val=v_max, 
+                native_min=v_min, 
+                native_max=v_max
+            ) for f, (v_min, v_max) in self._ranges.items()
         }
         logger.info("Interpolation engine (re)initialized with current macro fields.")
 
@@ -92,7 +106,7 @@ class InterpolationEngine:
         """Accept a new target from the LLM or a direct caller."""
         from .models import MacroState
         from .config import get_macro_config
-        _, string_fields = get_macro_config()
+        _, string_fields, _ = get_macro_config()
         self._start_state = MacroState(**self.current.model_dump())
         self.target = target
         self._transition_start = time.monotonic()
@@ -124,13 +138,15 @@ class InterpolationEngine:
 
     def apply_calibration(self, cal: CalibrationRequest) -> None:
         """Update per-macro output clamping ranges."""
-        for f in self._ranges.keys():
+        for f, (v_min, v_max) in self._ranges.items():
             min_attr = f"{f}_min"
             max_attr = f"{f}_max"
             if hasattr(cal, min_attr) and hasattr(cal, max_attr):
                 self._calibration[f] = _CalibrationRange(
-                    getattr(cal, min_attr), 
-                    getattr(cal, max_attr)
+                    min_val=getattr(cal, min_attr), 
+                    max_val=getattr(cal, max_attr),
+                    native_min=v_min,
+                    native_max=v_max
                 )
 
     def get_status(self) -> OrchestratorStatus:
