@@ -1,13 +1,15 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 const API_BASE = "http://localhost:8000";
 
 type OverrideSliderProps = {
   field: string;
   label: string;
-  liveValue: number;     // 0.0–1.0  (from WebSocket — shown when not pinned)
+  liveValue: number;     // from WebSocket — shown when not pinned
+  min: number;
+  max: number;
   isPinned: boolean;
   onPinChange: (field: string, pinned: boolean) => void;
 };
@@ -23,6 +25,8 @@ export default function OverrideSlider({
   field,
   label,
   liveValue,
+  min,
+  max,
   isPinned,
   onPinChange,
 }: OverrideSliderProps) {
@@ -30,7 +34,15 @@ export default function OverrideSlider({
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Sync slider display to live value when not pinned
+  // This prevents the slider from "jumping" to an old value when first clicked
+  useEffect(() => {
+    if (!isPinned) {
+      setSliderValue(liveValue);
+    }
+  }, [liveValue, isPinned]);
+
   const displayValue = isPinned ? sliderValue : liveValue;
+  const percentage = ((displayValue - min) / (max - min)) * 100;
 
   const sendOverride = useCallback(
     (value: number) => {
@@ -53,19 +65,31 @@ export default function OverrideSlider({
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const v = parseFloat(e.target.value);
     setSliderValue(v);
-    onPinChange(field, true); // auto-pin on first move
+    if (!isPinned) {
+      onPinChange(field, true);
+    }
     sendOverride(v);
+  };
+
+  const handlePointerDown = () => {
+    if (!isPinned) {
+      onPinChange(field, true);
+      sendOverride(sliderValue);
+    }
   };
 
   const handleRelease = async () => {
     if (!isPinned) return;
     try {
+      // Optimistically unpin to avoid UI lag
+      onPinChange(field, false);
       await fetch(`${API_BASE}/orchestrator/override/${field}`, {
         method: "DELETE",
       });
-      onPinChange(field, false);
     } catch (err) {
       console.error("Override DELETE failed:", err);
+      // Rollback on failure? (optional)
+      onPinChange(field, true);
     }
   };
 
@@ -80,8 +104,8 @@ export default function OverrideSlider({
           {label}
         </span>
         <div className="flex items-center gap-3">
-          <span className="text-base font-mono font-bold text-white tabular-nums w-10 text-right">
-            {displayValue.toFixed(2)}
+          <span className="text-base font-mono font-bold text-white tabular-nums min-w-[3rem] text-right">
+            {displayValue.toFixed(max > 1 ? 0 : 2)}
           </span>
           <button
             onClick={handleRelease}
@@ -99,11 +123,12 @@ export default function OverrideSlider({
 
       <input
         type="range"
-        min={0}
-        max={1}
-        step={0.01}
+        min={min}
+        max={max}
+        step={max > 1 ? 1 : 0.01}
         value={displayValue}
         onChange={handleChange}
+        onPointerDown={handlePointerDown}
         className={`w-full h-2 rounded-full appearance-none cursor-pointer transition-all duration-200 ${
           isPinned
             ? "[&::-webkit-slider-thumb]:bg-amber-400 [&::-webkit-slider-runnable-track]:bg-amber-900/50"
@@ -111,8 +136,8 @@ export default function OverrideSlider({
         }`}
         style={{
           background: isPinned
-            ? `linear-gradient(to right, rgb(245 158 11) ${displayValue * 100}%, rgb(120 53 15 / 0.5) ${displayValue * 100}%)`
-            : `linear-gradient(to right, rgb(139 92 246) ${displayValue * 100}%, rgb(55 65 81) ${displayValue * 100}%)`,
+            ? `linear-gradient(to right, rgb(245 158 11) ${percentage}%, rgb(120 53 15 / 0.5) ${percentage}%)`
+            : `linear-gradient(to right, rgb(139 92 246) ${percentage}%, rgb(55 65 81) ${percentage}%)`,
         }}
       />
     </div>

@@ -65,8 +65,10 @@ def create_calibration_request_model() -> Type[BaseModel]:
     for v in variables:
         if v["type"] == "numeric":
             name = v["name"]
-            fields[f"{name}_min"] = (float, Field(default=0.0, ge=0.0, le=1.0))
-            fields[f"{name}_max"] = (float, Field(default=1.0, ge=0.0, le=1.0))
+            v_min = v.get("min", 0.0)
+            v_max = v.get("max", 1.0)
+            fields[f"{name}_min"] = (float, Field(default=v_min, ge=v_min, le=v_max))
+            fields[f"{name}_max"] = (float, Field(default=v_max, ge=v_min, le=v_max))
     return create_model("CalibrationRequest", **fields)
 
 CalibrationRequest = create_calibration_request_model()
@@ -81,7 +83,7 @@ class PromptRequest(BaseModel):
 class OverrideRequest(BaseModel):
     """Request body for POST /orchestrator/override — pins one field to a manual value."""
     field: str = Field(..., description="Macro field name")
-    value: float = Field(..., ge=0.0, le=1.0, description="Pinned value (0.0–1.0)")
+    value: float = Field(..., description="Pinned value")
 
 
 class OrchestratorStatus(BaseModel):

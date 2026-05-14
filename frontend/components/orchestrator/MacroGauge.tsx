@@ -3,7 +3,9 @@
 type MacroGaugeProps = {
   name: string;
   label: string;
-  value: number;          // 0.0–1.0
+  value: number;
+  min: number;
+  max: number;
   isOverridden: boolean;
   isInterpolating: boolean;
 };
@@ -16,10 +18,12 @@ export default function MacroGauge({
   name,
   label,
   value,
+  min,
+  max,
   isOverridden,
   isInterpolating,
 }: MacroGaugeProps) {
-  const pct = Math.round(value * 100);
+  const pct = Math.max(0, Math.min(100, Math.round(((value - min) / (max - min)) * 100)));
 
   const barColor = isOverridden
     ? "from-amber-500 to-amber-400"
@@ -58,8 +62,8 @@ export default function MacroGauge({
               LIVE
             </span>
           )}
-          <span className="text-lg font-mono font-bold text-white tabular-nums w-12 text-right">
-            {value.toFixed(2)}
+          <span className="text-lg font-mono font-bold text-white tabular-nums min-w-[3rem] text-right">
+            {value.toFixed(max > 1 ? 0 : 2)}
           </span>
         </div>
       </div>
@@ -83,9 +87,9 @@ export default function MacroGauge({
 
       {/* Scale labels */}
       <div className="flex justify-between mt-1">
-        <span className="text-xs text-gray-600">0.0</span>
-        <span className="text-xs text-gray-600">0.5</span>
-        <span className="text-xs text-gray-600">1.0</span>
+        <span className="text-xs text-gray-600">{min.toFixed(max > 1 ? 0 : 1)}</span>
+        <span className="text-xs text-gray-600">{((min + max) / 2).toFixed(max > 1 ? 0 : 1)}</span>
+        <span className="text-xs text-gray-600">{max.toFixed(max > 1 ? 0 : 1)}</span>
       </div>
     </div>
   );

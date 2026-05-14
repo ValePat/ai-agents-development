@@ -43,9 +43,11 @@ def _load_orchestrator_settings() -> dict:
 
 def _build_system_prompt() -> str:
     """Build the system prompt dynamically from config and settings."""
-    from .config import MACRO_NUMERIC_FIELDS, MACRO_STRING_FIELDS
+    from .config import load_variables
 
     settings = _load_orchestrator_settings()
+    variables = load_variables()
+    
     prefix = settings.get(
         "system_prompt_prefix",
         "You are a musical macro translator for a live show conductor system.\n"
@@ -55,19 +57,23 @@ def _build_system_prompt() -> str:
     rules = settings.get(
         "system_prompt_rules",
         "- Output ONLY the JSON object. No explanations, no markdown, no code blocks.\n"
-        "- All numeric values must be between 0.0 and 1.0 inclusive.\n"
+        "- All numeric values must stay within their specified ranges.\n"
         "- duration must be a positive number (minimum 0.5).\n"
         "- Interpret the prompt creatively but literally for the intended live-show context.",
     )
 
     prompt = prefix
-    prompt += "Numeric fields (all floats in range [0.0, 1.0]):\n"
-    for field, desc in MACRO_NUMERIC_FIELDS.items():
-        prompt += f'- "{field}": {desc}\n'
+    prompt += "Numeric fields:\n"
+    for v in variables:
+        if v["type"] == "numeric":
+            v_min = v.get("min", 0.0)
+            v_max = v.get("max", 1.0)
+            prompt += f'- "{v["name"]}": {v["description"]} (Range: [{v_min}, {v_max}])\n'
 
     prompt += "\nString fields (short expressive descriptions):\n"
-    for field, desc in MACRO_STRING_FIELDS.items():
-        prompt += f'- "{field}": {desc}\n'
+    for v in variables:
+        if v["type"] == "string":
+            prompt += f'- "{v["name"]}": {v["description"]}\n'
 
     prompt += '\n- "duration": Transition duration in seconds (typically 2–16 s)\n'
 
@@ -128,7 +134,7 @@ async def translate_prompt(prompt: str, duration_override: float | None = None) 
         When the LLM output cannot be parsed or validated.
     """
     from .models import MacroTarget
-    from .config import MACRO_NUMERIC_FIELDS
+    from .config import load_variables
     
     model_id = os.getenv(
         "ORCHESTRATOR_MODEL_ID",
@@ -146,13 +152,20 @@ async def translate_prompt(prompt: str, duration_override: float | None = None) 
     except Exception as exc:
         raise LLMTranslationError(f"LLM call failed: {exc}") from exc
 
-    # Clamp all macro floats to [0.0, 1.0]
-    for field in MACRO_NUMERIC_FIELDS:
+    # Load variable definitions for clamping
+    variables = load_variables()
+    ranges = {
+        v["name"]: (v.get("min", 0.0), v.get("max", 1.0), v.get("default", 0.5))
+        for v in variables if v["type"] == "numeric"
+    }
+
+    # Clamp all macro floats to their specific ranges
+    for field, (v_min, v_max, v_default) in ranges.items():
         if field in data:
             try:
-                data[field] = max(0.0, min(1.0, float(data[field])))
+                data[field] = max(v_min, min(v_max, float(data[field])))
             except (ValueError, TypeError):
-                data[field] = 0.5
+                data[field] = v_default
 
     if duration_override is not None:
         data["duration"] = duration_override

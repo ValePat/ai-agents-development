@@ -23,6 +23,8 @@ type ToastMsg = {
   type: "success" | "error" | "info";
 };
 
+type MacroState = Record<string, any>;
+
 export default function OrchestratorPage() {
   // ── Dynamic variable definitions ─────────────────────────────────────────
   const [numericMacros, setNumericMacros] = useState<MacroDef[]>([]);
@@ -44,6 +46,7 @@ export default function OrchestratorPage() {
 
   // ── Override zone ────────────────────────────────────────────────────────
   const [pinnedFields, setPinnedFields] = useState<Set<string>>(new Set());
+  const lastInteractionRef = useRef<Record<string, number>>({});
 
   // ── Rehearsal panel ──────────────────────────────────────────────────────
   const [rehearsalOpen, setRehearsalOpen] = useState(false);
@@ -108,8 +111,28 @@ export default function OrchestratorPage() {
         try {
           const data: any = JSON.parse(ev.data);
           setStatus(data);
-          // Sync pinned fields from server
-          setPinnedFields(new Set(data.pinned_fields));
+          
+          // Sync pinned fields from server, but ignore recently changed ones to avoid flicker
+          const serverPinned = data.pinned_fields || [];
+          setPinnedFields((prev) => {
+            const now = Date.now();
+            const reconciled = new Set(prev);
+            
+            // 1. Add anything from server that we haven't touched recently
+            serverPinned.forEach((f: string) => {
+              if (now - (lastInteractionRef.current[f] || 0) > 1500) {
+                reconciled.add(f);
+              }
+            });
+            // 2. Remove anything NOT in server that we haven't touched recently
+            prev.forEach(f => {
+              if (!serverPinned.includes(f) && (now - (lastInteractionRef.current[f] || 0) > 1500)) {
+                reconciled.delete(f);
+              }
+            });
+            return reconciled;
+          });
+
           // Add to OSC log (last 30 entries)
           const ts = new Date().toLocaleTimeString("en-US", { hour12: false });
           const vals = data.current;
@@ -179,6 +202,7 @@ export default function OrchestratorPage() {
 
   // ── Override pin/release callbacks ───────────────────────────────────────
   const handlePinChange = useCallback((field: string, pinned: boolean) => {
+    lastInteractionRef.current[field] = Date.now();
     setPinnedFields((prev) => {
       const next = new Set(prev);
       if (pinned) next.add(field);
@@ -354,6 +378,8 @@ export default function OrchestratorPage() {
                 name={m.name}
                 label={m.name.replace("_", " ")}
                 value={current[m.name] || 0}
+                min={m.min ?? 0}
+                max={m.max ?? 1}
                 isOverridden={pinnedFields.has(m.name)}
                 isInterpolating={isInterp && !pinnedFields.has(m.name)}
               />
@@ -373,6 +399,8 @@ export default function OrchestratorPage() {
                 field={m.name}
                 label={m.name.replace("_", " ")}
                 liveValue={current[m.name] || 0}
+                min={m.min ?? 0}
+                max={m.max ?? 1}
                 isPinned={pinnedFields.has(m.name)}
                 onPinChange={handlePinChange}
               />
@@ -488,8 +516,8 @@ function CalibrationPanel({ addToast, macros }: CalibrationPanelProps) {
   useEffect(() => {
     const initialCal: CalibrationState = {};
     macros.forEach((m) => {
-      initialCal[`${m.name}_min`] = 0;
-      initialCal[`${m.name}_max`] = 1;
+      initialCal[`${m.name}_min`] = m.min ?? 0;
+      initialCal[`${m.name}_max`] = m.max ?? 1;
     });
     setCal(initialCal);
   }, [macros]);
@@ -520,22 +548,22 @@ function CalibrationPanel({ addToast, macros }: CalibrationPanelProps) {
             <div className="flex items-center gap-2">
               <label className="text-xs text-gray-500 w-7">Min</label>
               <input
-                type="range" min={0} max={1} step={0.01}
-                value={cal[`${m.name}_min`] ?? 0}
+                type="range" min={m.min ?? 0} max={m.max ?? 1} step={(m.max ?? 1) > 1 ? 1 : 0.01}
+                value={cal[`${m.name}_min`] ?? (m.min ?? 0)}
                 onChange={(e) => setCal((c) => ({ ...c, [`${m.name}_min`]: parseFloat(e.target.value) }))}
                 className="flex-1 h-1.5 accent-blue-500"
               />
-              <span className="text-xs font-mono text-gray-400 w-8">{(cal[`${m.name}_min`] ?? 0).toFixed(2)}</span>
+              <span className="text-xs font-mono text-gray-400 w-8">{(cal[`${m.name}_min`] ?? (m.min ?? 0)).toFixed((m.max ?? 1) > 1 ? 0 : 2)}</span>
             </div>
             <div className="flex items-center gap-2">
               <label className="text-xs text-gray-500 w-7">Max</label>
               <input
-                type="range" min={0} max={1} step={0.01}
-                value={cal[`${m.name}_max`] ?? 1}
+                type="range" min={m.min ?? 0} max={m.max ?? 1} step={(m.max ?? 1) > 1 ? 1 : 0.01}
+                value={cal[`${m.name}_max`] ?? (m.max ?? 1)}
                 onChange={(e) => setCal((c) => ({ ...c, [`${m.name}_max`]: parseFloat(e.target.value) }))}
                 className="flex-1 h-1.5 accent-purple-500"
               />
-              <span className="text-xs font-mono text-gray-400 w-8">{(cal[`${m.name}_max`] ?? 1).toFixed(2)}</span>
+              <span className="text-xs font-mono text-gray-400 w-8">{(cal[`${m.name}_max`] ?? (m.max ?? 1)).toFixed((m.max ?? 1) > 1 ? 0 : 2)}</span>
             </div>
           </div>
         ))}

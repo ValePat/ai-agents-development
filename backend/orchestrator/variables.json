@@ -63,17 +63,19 @@
     "default": 0.0
   },
   {
-    "name": "vibe",
-    "description": "A one or two-word descriptor of the current musical vibe",
-    "type": "string",
-    "category": "Music",
-    "default": "Neutral"
-  },
-  {
     "name": "scene_description",
     "description": "A short, evocative description of the visual/emotional scene",
     "type": "string",
     "category": "Visual",
     "default": ""
+  },
+  {
+    "name": "test",
+    "description": "it serves as test variable",
+    "type": "numeric",
+    "category": "Music",
+    "min": 0.0,
+    "max": 100.0,
+    "default": 0.5
   }
 ]

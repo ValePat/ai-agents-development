@@ -15,6 +15,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
+from typing import Any
 
 from .models import OrchestratorStatus, CalibrationRequest
 from .osc_dispatcher import OscDispatcher
@@ -63,15 +64,23 @@ class InterpolationEngine:
     def reinitialize(self) -> None:
         """Reload configuration and models when variables change."""
         from .models import MacroState, MacroTarget
-        from .config import MACRO_NUMERIC_FIELDS
+        from .config import load_variables
         self.current = MacroState()
         self.target = MacroTarget()
         self._task: asyncio.Task | None = getattr(self, "_task", None)
         self._override: dict[str, float] = {}   # field → pinned value
         self._transition_start: float = 0.0
         self._start_state = MacroState()
+        
+        # Load ranges for clamping
+        variables = load_variables()
+        self._ranges = {
+            v["name"]: (v.get("min", 0.0), v.get("max", 1.0))
+            for v in variables if v["type"] == "numeric"
+        }
+        
         self._calibration: dict[str, _CalibrationRange] = {
-            f: _CalibrationRange() for f in MACRO_NUMERIC_FIELDS
+            f: _CalibrationRange() for f in self._ranges.keys()
         }
         logger.info("Interpolation engine (re)initialized with current macro fields.")
 
@@ -82,13 +91,14 @@ class InterpolationEngine:
     async def set_target(self, target: Any) -> None:
         """Accept a new target from the LLM or a direct caller."""
         from .models import MacroState
-        from .config import MACRO_STRING_FIELDS
+        from .config import get_macro_config
+        _, string_fields = get_macro_config()
         self._start_state = MacroState(**self.current.model_dump())
         self.target = target
         self._transition_start = time.monotonic()
         
         # Immediately update string fields (they don't interpolate)
-        for f in MACRO_STRING_FIELDS:
+        for f in string_fields:
             if hasattr(target, f):
                 setattr(self.current, f, getattr(target, f))
             
@@ -99,23 +109,22 @@ class InterpolationEngine:
 
     def hard_override(self, field: str, value: float) -> None:
         """Pin a field to a manual slider value (excludes it from interpolation)."""
-        from .config import MACRO_NUMERIC_FIELDS
-        if field not in MACRO_NUMERIC_FIELDS:
+        if field not in self._ranges:
             raise ValueError(f"Unknown numeric macro field: {field!r}")
-        self._override[field] = max(0.0, min(1.0, value))
+        
+        v_min, v_max = self._ranges[field]
+        self._override[field] = max(v_min, min(v_max, value))
         setattr(self.current, field, self._override[field])
 
     def release_override(self, field: str) -> None:
         """Release a pinned field back to interpolation."""
-        from .config import MACRO_NUMERIC_FIELDS
-        if field not in MACRO_NUMERIC_FIELDS:
+        if field not in self._ranges:
             raise ValueError(f"Unknown macro field: {field!r}")
         self._override.pop(field, None)
 
     def apply_calibration(self, cal: CalibrationRequest) -> None:
         """Update per-macro output clamping ranges."""
-        from .config import MACRO_NUMERIC_FIELDS
-        for f in MACRO_NUMERIC_FIELDS:
+        for f in self._ranges.keys():
             min_attr = f"{f}_min"
             max_attr = f"{f}_max"
             if hasattr(cal, min_attr) and hasattr(cal, max_attr):
@@ -125,9 +134,6 @@ class InterpolationEngine:
                 )
 
     def get_status(self) -> OrchestratorStatus:
-        from .config import get_macro_config
-        numeric_fields, _ = get_macro_config()
-        
         elapsed = time.monotonic() - self._transition_start
         # Handle case where duration might be 0 or very small
         duration = getattr(self.target, "duration", 4.0)
@@ -164,7 +170,6 @@ class InterpolationEngine:
         try:
             while True:
                 tick_start = time.monotonic()
-                from .config import MACRO_NUMERIC_FIELDS
 
                 elapsed = tick_start - self._transition_start
                 duration = max(getattr(self.target, "duration", 4.0), 1e-6)
@@ -174,27 +179,28 @@ class InterpolationEngine:
                     # Use linear for very short "snap" transitions
                     eased_t = raw_t if duration < 0.5 else _smoothstep(raw_t)
 
-                    for f in MACRO_NUMERIC_FIELDS:
+                    for f, (v_min, v_max) in self._ranges.items():
                         if f in self._override:
                             continue  # pinned
-                        field_default = self.current.model_fields[f].default if f in self.current.model_fields else 0.5
+                        field_default = self.current.model_fields[f].default if f in self.current.model_fields else (v_min + v_max) / 2
                         start_val = getattr(self._start_state, f, field_default)
                         end_val = getattr(self.target, f, field_default)
                         interp_val = _lerp(start_val, end_val, eased_t)
                         # Apply calibration mapping
-                        calibrated = self._calibration.get(f, _CalibrationRange()).apply(interp_val)
-                        setattr(self.current, f, max(0.0, min(1.0, calibrated)))
+                        calibrated = self._calibration.get(f, _CalibrationRange(v_min, v_max)).apply(interp_val)
+                        setattr(self.current, f, max(v_min, min(v_max, calibrated)))
                 else:
                     # Transition complete — park at target
-                    for f in MACRO_NUMERIC_FIELDS:
+                    for f, (v_min, v_max) in self._ranges.items():
                         if f in self._override:
                             continue
-                        field_default = self.current.model_fields[f].default if f in self.current.model_fields else 0.5
+                        field_default = self.current.model_fields[f].default if f in self.current.model_fields else (v_min + v_max) / 2
                         end_val = getattr(self.target, f, field_default)
-                        calibrated = self._calibration.get(f, _CalibrationRange()).apply(end_val)
-                        setattr(self.current, f, max(0.0, min(1.0, calibrated)))
+                        calibrated = self._calibration.get(f, _CalibrationRange(v_min, v_max)).apply(end_val)
+                        setattr(self.current, f, max(v_min, min(v_max, calibrated)))
 
                 self._dispatcher.dispatch(self.current)
+
 
                 # Sleep for the remainder of the tick period
                 tick_elapsed = time.monotonic() - tick_start
