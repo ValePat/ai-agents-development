@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 const API_BASE = "http://localhost:8000";
 
@@ -223,7 +224,7 @@ export default function SettingsPage() {
   const [savingOrch, setSavingOrch] = useState(false);
   const [suggestedModels, setSuggestedModels] = useState<string[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const toastCounter = { current: 0 };
+  const toastCounter = useRef(0);
 
   const addToast = useCallback((text: string, type: Toast["type"]) => {
     const id = ++toastCounter.current;
@@ -302,13 +303,22 @@ export default function SettingsPage() {
       </div>
 
       {/* Page header */}
-      <div className="border-b border-gray-800 px-6 py-4">
-        <h1 className="text-xl font-bold text-white">Orchestrator Configuration</h1>
-        <p className="text-xs text-gray-500 mt-0.5">
-          Adjust agent instructions, model selection, and engine parameters. Changes persist to{" "}
-          <code className="font-mono text-gray-400">backend/settings.json</code>.
-        </p>
-      </div>
+      <header className="flex-shrink-0 border-b border-gray-800 bg-gray-900/50 backdrop-blur-md sticky top-0 z-20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center gap-4">
+          <Link 
+            href="/"
+            className="p-2 rounded-full hover:bg-gray-800 text-gray-400 hover:text-white transition-all"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+          </Link>
+          <div>
+            <h1 className="text-lg font-bold text-white tracking-tight">System Settings</h1>
+            <p className="text-xs text-gray-500 uppercase tracking-widest font-medium">Model, Engine & System Prompts</p>
+          </div>
+        </div>
+      </header>
 
       {loading ? (
         <div className="flex items-center justify-center h-64 text-gray-500 text-sm">
@@ -385,7 +395,7 @@ export default function SettingsPage() {
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
               <SectionHeader
                 title="System Prompt"
-                subtitle="Full instructions for the orchestrator agent. The macro field list is automatically appended."
+                subtitle="Show-specific instructions injected into the agent. Behavioral guidelines (agent_instructions.txt) are prepended automatically."
               />
               <Label>Instructions</Label>
               <TextArea
@@ -399,10 +409,12 @@ export default function SettingsPage() {
                   Available Placeholders:
                 </p>
                 <ul className="text-[10px] font-mono text-gray-400 list-disc list-inside space-y-1">
-                  <li><code className="text-blue-400">{"{{VARIABLE_DEFINITIONS}}"}</code> - Dynamically generated list of macros from the Config page.</li>
-                  <li><code className="text-blue-400">{"{{CURRENT_STATE}}"}</code> - Current numeric and string values of the show macros.</li>
-                  <li><code className="text-blue-400">{"{{SAFE_DIR}}"}</code> - Absolute path to the sandboxed filesystem (for tools).</li>
+                  <li><code className="text-blue-400">{"{{{VARIABLE_DEFINITIONS}}}"}</code> - Dynamically generated list of macros from the Config page.</li>
+                  <li><code className="text-blue-400">{"{{{CURRENT_STATE}}}"}</code> - Current numeric and string values of the show macros.</li>
+                  <li><code className="text-blue-400">{"{{{SHOW_CONTEXT}}}"}</code> - Active show name, description, genres, and core vibes.</li>
+                  <li><code className="text-blue-400">{"{{{SHOW_ID}}}"}</code> - Active show ID (use as prefix for memory keys).</li>
                 </ul>
+                <p className="text-[10px] text-gray-500 mt-1">Note: Triple braces are required to avoid Jinja2 rendering conflicts. Behavioral guidelines are loaded separately from <code className="text-gray-300">agent_instructions.txt</code> and prepended automatically.</p>
               </div>
             </div>
 

@@ -114,11 +114,12 @@ async def get_defaults():
     """Return a list of well-known OpenRouter model IDs as suggestions."""
     return {
         "suggested_models": [
-            "openrouter/anthropic/claude-3-5-haiku",
-            "openrouter/anthropic/claude-3-5-sonnet",
+            "openrouter/anthropic/claude-3.5-haiku",
+            "openrouter/anthropic/claude-3.5-sonnet",
             "openrouter/anthropic/claude-3-opus",
-            "openrouter/google/gemini-3.1-flash-lite",
             "openrouter/google/gemini-2.0-flash-001",
+            "openrouter/google/gemini-2.0-flash-lite-preview-02-05",
+            "openrouter/google/gemini-flash-1.5-8b",
             "openrouter/openai/gpt-4o-mini",
             "openrouter/openai/gpt-4o",
             "openrouter/meta-llama/llama-3.3-70b-instruct",

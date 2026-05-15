@@ -124,7 +124,7 @@ Add to `backend/.env`:
 
 ```dotenv
 # Orchestrator LLM (defaults to Gemini Flash via OpenRouter)
-ORCHESTRATOR_MODEL_ID=openrouter/google/gemini-3.1-flash-lite
+ORCHESTRATOR_MODEL_ID=openrouter/google/gemini-2.0-flash-001
 
 # OSC Targets (defaults shown)
 ABLETON_OSC_HOST=127.0.0.1

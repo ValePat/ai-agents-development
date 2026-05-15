@@ -36,10 +36,15 @@ export default function OrchestratorPage() {
   const numericMacrosRef = useRef<MacroDef[]>([]);
   const stringMacrosRef = useRef<MacroDef[]>([]);
 
+  // ── Show state ────────────────────────────────────────────────────────────
+  const [activeShow, setActiveShow] = useState<any | null>(null);
+  const [availableShows, setAvailableShows] = useState<any[]>([]);
+
   // ── WebSocket state ──────────────────────────────────────────────────────
   const [status, setStatus] = useState<any | null>(null);
   const [wsConnected, setWsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const currentRef = useRef<Record<string, any>>({});
 
   // ── Prompt zone ──────────────────────────────────────────────────────────
   const [prompt, setPrompt] = useState("");
@@ -52,6 +57,8 @@ export default function OrchestratorPage() {
   const lastInteractionRef = useRef<Record<string, number>>({});
 
   // ── Rehearsal panel ──────────────────────────────────────────────────────
+  const [zoneBOpen, setZoneBOpen] = useState(true);
+  const [zoneCOpen, setZoneCOpen] = useState(false);
   const [rehearsalOpen, setRehearsalOpen] = useState(false);
   const [oscLog, setOscLog] = useState<string[]>([]);
 
@@ -65,30 +72,57 @@ export default function OrchestratorPage() {
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4000);
   }, []);
 
-  // ── Fetch variable definitions ───────────────────────────────────────────
-  useEffect(() => {
-    let retryTimer: ReturnType<typeof setTimeout>;
-
-    const fetchVars = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/orchestrator/variables`);
-        if (res.ok) {
-          const data: MacroDef[] = await res.json();
-          setNumericMacros(data.filter((v) => v.type === "numeric"));
-          setStringMacros(data.filter((v) => v.type === "string"));
-        } else {
-          // Non-2xx: retry after 2 s
-          retryTimer = setTimeout(fetchVars, 2000);
-        }
-      } catch (err) {
-        console.error("Failed to fetch variables, retrying…", err);
-        retryTimer = setTimeout(fetchVars, 2000);
-      }
-    };
-
-    fetchVars();
-    return () => clearTimeout(retryTimer);
+  // ── Fetch shows ──────────────────────────────────────────────────────────
+  const fetchShows = useCallback(async () => {
+    try {
+      const [allRes, activeRes] = await Promise.all([
+        fetch(`${API_BASE}/orchestrator/shows`),
+        fetch(`${API_BASE}/orchestrator/shows/active`)
+      ]);
+      if (allRes.ok) setAvailableShows(await allRes.json());
+      if (activeRes.ok) setActiveShow(await activeRes.json());
+    } catch (err) {
+      console.error("Failed to fetch shows", err);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchShows();
+  }, [fetchShows]);
+
+  const handleSwitchShow = async (id: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/orchestrator/shows/active`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (res.ok) {
+        await fetchShows();
+        addToast(`Switched to show: ${id}`, "success");
+      }
+    } catch (err) {
+      addToast("Failed to switch show", "error");
+    }
+  };
+
+  // ── Fetch variable definitions ───────────────────────────────────────────
+  const fetchVars = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/orchestrator/variables`);
+      if (res.ok) {
+        const data: MacroDef[] = await res.json();
+        setNumericMacros(data.filter((v) => v.type === "numeric"));
+        setStringMacros(data.filter((v) => v.type === "string"));
+      }
+    } catch (err) {
+      console.error("Failed to fetch variables", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchVars();
+  }, [fetchVars, activeShow?.id]);
 
   // Keep refs in sync so the WebSocket closure always sees the latest lists
   useEffect(() => {
@@ -114,6 +148,7 @@ export default function OrchestratorPage() {
         try {
           const data: any = JSON.parse(ev.data);
           setStatus(data);
+          currentRef.current = data.current;
           
           // Sync pinned fields from server, but ignore recently changed ones to avoid flicker
           const serverPinned = data.pinned_fields || [];
@@ -185,7 +220,11 @@ export default function OrchestratorPage() {
       const res = await fetch(`${API_BASE}/orchestrator/prompt`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: prompt.trim(), duration }),
+        body: JSON.stringify({ 
+          prompt: prompt.trim(), 
+          duration,
+          show_id: activeShow?.id || "default_show"
+        }),
       });
 
       if (!res.ok) {
@@ -254,6 +293,22 @@ export default function OrchestratorPage() {
             </div>
           </div>
           <div className="flex items-center gap-4">
+            {/* Show Selector */}
+            <div className="flex items-center gap-2 bg-gray-800/50 border border-gray-700 rounded-lg px-2 py-1">
+              <span className="text-[10px] font-bold text-gray-500 uppercase tracking-tighter">Show</span>
+              <select
+                value={activeShow?.id || "default_show"}
+                onChange={(e) => handleSwitchShow(e.target.value)}
+                className="bg-transparent text-xs font-bold text-purple-400 focus:outline-none cursor-pointer"
+              >
+                {availableShows.map(s => (
+                  <option key={s.id} value={s.id} className="bg-gray-800">{s.name}</option>
+                ))}
+              </select>
+              <Link href="/shows" className="ml-1 text-gray-500 hover:text-purple-400" title="Manage Shows">
+                ⚙️
+              </Link>
+            </div>
             {/* WS status indicator */}
             <div className="flex items-center gap-2">
               <div
@@ -347,79 +402,108 @@ export default function OrchestratorPage() {
         </section>
 
         {/* ── ZONE B: Live Macro Visualizer ────────────────────────────────── */}
-        <section className="bg-gray-800/60 border border-gray-700/50 rounded-2xl p-5 shadow-xl">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xs font-semibold text-blue-400 uppercase tracking-widest">
-              Zone B — Live Macros
-            </h2>
-            {isInterp && status && (
-              <div className="flex items-center gap-2">
-                <div className="text-xs text-gray-400">
-                  {Math.max(0, status.target.duration - status.elapsed_seconds).toFixed(1)}s remaining
+        <section className="bg-gray-800/60 border border-gray-700/50 rounded-2xl shadow-xl overflow-hidden">
+          <button
+            onClick={() => setZoneBOpen((o) => !o)}
+            className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-700/30 transition-colors text-left"
+          >
+            <div className="flex items-center gap-4">
+              <h2 className="text-xs font-semibold text-blue-400 uppercase tracking-widest">
+                Zone B — Live Macros
+              </h2>
+              {isInterp && status && (
+                <div className="flex items-center gap-2">
+                  <div className="text-[10px] text-gray-500">
+                    {Math.max(0, status.target.duration - status.elapsed_seconds).toFixed(1)}s
+                  </div>
+                  <div className="w-16 h-1 bg-gray-700 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-purple-500 to-blue-500 rounded-full transition-[width] duration-100"
+                      style={{
+                        width: `${Math.min(100, (status.elapsed_seconds / status.target.duration) * 100)}%`,
+                      }}
+                    />
+                  </div>
                 </div>
-                <div className="w-24 h-1.5 bg-gray-700 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-purple-500 to-blue-500 rounded-full transition-[width] duration-100"
-                    style={{
-                      width: `${Math.min(100, (status.elapsed_seconds / status.target.duration) * 100)}%`,
-                    }}
+              )}
+            </div>
+            <span className="text-gray-500 text-sm">{zoneBOpen ? "▲ Close" : "▼ Open"}</span>
+          </button>
+
+          {zoneBOpen && (
+            <div className="px-5 pb-5 border-t border-gray-700/40 pt-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {numericMacros.map((m) => (
+                  <MacroGauge
+                    key={m.name}
+                    name={m.name}
+                    label={m.name.replace("_", " ")}
+                    value={current[m.name] || 0}
+                    min={m.min ?? 0}
+                    max={m.max ?? 1}
+                    isOverridden={pinnedFields.has(m.name)}
+                    isInterpolating={isInterp && !pinnedFields.has(m.name)}
                   />
-                </div>
+                ))}
               </div>
-            )}
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {numericMacros.map((m) => (
-              <MacroGauge
-                key={m.name}
-                name={m.name}
-                label={m.name.replace("_", " ")}
-                value={current[m.name] || 0}
-                min={m.min ?? 0}
-                max={m.max ?? 1}
-                isOverridden={pinnedFields.has(m.name)}
-                isInterpolating={isInterp && !pinnedFields.has(m.name)}
-              />
-            ))}
-          </div>
+            </div>
+          )}
         </section>
 
         {/* ── ZONE C: Emergency Override Panel ────────────────────────────── */}
-        <section className="bg-gray-800/60 border border-gray-700/50 rounded-2xl p-5 shadow-xl">
-          <h2 className="text-xs font-semibold text-amber-400 uppercase tracking-widest mb-4">
-            Zone C — Emergency Override
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {numericMacros.map((m) => (
-              <OverrideSlider
-                key={m.name}
-                field={m.name}
-                label={m.name.replace("_", " ")}
-                liveValue={current[m.name] || 0}
-                min={m.min ?? 0}
-                max={m.max ?? 1}
-                isPinned={pinnedFields.has(m.name)}
-                onPinChange={handlePinChange}
-              />
-            ))}
-          </div>
-          {pinnedFields.size > 0 && (
-            <div className="mt-4 flex items-center justify-between bg-amber-900/20 border border-amber-500/30 rounded-xl p-3">
-              <span className="text-sm text-amber-400">
-                {pinnedFields.size} field{pinnedFields.size > 1 ? "s" : ""} pinned
-              </span>
-              <button
-                onClick={async () => {
-                  for (const f of pinnedFields) {
-                    await fetch(`${API_BASE}/orchestrator/override/${f}`, { method: "DELETE" });
-                  }
-                  setPinnedFields(new Set());
-                  addToast("All overrides released", "info");
-                }}
-                className="text-xs px-4 py-1.5 bg-amber-500/20 text-amber-400 border border-amber-500/50 rounded-full hover:bg-amber-500/30 transition-all"
-              >
-                Release All
-              </button>
+        <section className="bg-gray-800/60 border border-gray-700/50 rounded-2xl shadow-xl overflow-hidden">
+          <button
+            onClick={() => setZoneCOpen((o) => !o)}
+            className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-700/30 transition-colors text-left"
+          >
+            <div className="flex items-center gap-4">
+              <h2 className="text-xs font-semibold text-amber-400 uppercase tracking-widest">
+                Zone C — Emergency Override
+              </h2>
+              {pinnedFields.size > 0 && (
+                <span className="text-[10px] bg-amber-500/20 text-amber-500 px-2 py-0.5 rounded-full font-bold">
+                  {pinnedFields.size} PINNED
+                </span>
+              )}
+            </div>
+            <span className="text-gray-500 text-sm">{zoneCOpen ? "▲ Close" : "▼ Open"}</span>
+          </button>
+
+          {zoneCOpen && (
+            <div className="px-5 pb-5 border-t border-gray-700/40 pt-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {numericMacros.map((m) => (
+                  <OverrideSlider
+                    key={m.name}
+                    field={m.name}
+                    label={m.name.replace("_", " ")}
+                    liveValue={current[m.name] || 0}
+                    min={m.min ?? 0}
+                    max={m.max ?? 1}
+                    isPinned={pinnedFields.has(m.name)}
+                    onPinChange={handlePinChange}
+                  />
+                ))}
+              </div>
+              {pinnedFields.size > 0 && (
+                <div className="mt-4 flex items-center justify-between bg-amber-900/20 border border-amber-500/30 rounded-xl p-3">
+                  <span className="text-sm text-amber-400">
+                    {pinnedFields.size} field{pinnedFields.size > 1 ? "s" : ""} pinned
+                  </span>
+                  <button
+                    onClick={async () => {
+                      for (const f of pinnedFields) {
+                        await fetch(`${API_BASE}/orchestrator/override/${f}`, { method: "DELETE" });
+                      }
+                      setPinnedFields(new Set());
+                      addToast("All overrides released", "info");
+                    }}
+                    className="text-xs px-4 py-1.5 bg-amber-500/20 text-amber-400 border border-amber-500/50 rounded-full hover:bg-amber-500/30 transition-all"
+                  >
+                    Release All
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </section>
@@ -445,8 +529,10 @@ export default function OrchestratorPage() {
                 </h3>
                 <PresetBank 
                   onLoad={handlePresetLoad} 
-                  currentState={current}
+                  currentStateRef={currentRef}
                   numericMacros={numericMacros}
+                  showId={activeShow?.id}
+                  builtInPresets={activeShow?.presets}
                 />
               </div>
 
@@ -477,6 +563,24 @@ export default function OrchestratorPage() {
           )}
         </section>
       </main>
+
+      {/* Navigation Footer */}
+      <footer className="flex-shrink-0 border-t border-gray-800 bg-gray-900/50 py-4">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex justify-center gap-8">
+          <Link href="/config" className="flex flex-col items-center gap-1 group">
+            <span className="text-lg group-hover:scale-110 transition-transform">📊</span>
+            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest group-hover:text-purple-400">Variables</span>
+          </Link>
+          <Link href="/shows" className="flex flex-col items-center gap-1 group">
+            <span className="text-lg group-hover:scale-110 transition-transform">🎭</span>
+            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest group-hover:text-blue-400">Shows</span>
+          </Link>
+          <Link href="/settings" className="flex flex-col items-center gap-1 group">
+            <span className="text-lg group-hover:scale-110 transition-transform">⚙️</span>
+            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest group-hover:text-amber-400">Settings</span>
+          </Link>
+        </div>
+      </footer>
 
       {/* Toast notifications */}
       <div className="fixed bottom-6 right-6 z-50 space-y-2 pointer-events-none">

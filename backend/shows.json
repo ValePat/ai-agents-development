@@ -1,0 +1,191 @@
+{
+  "active_show_id": "default_show",
+  "shows": [
+    {
+      "id": "default_show",
+      "name": "Main Performance",
+      "description": "Primary control profile for live electronic performance with balanced visual and musical macros.",
+      "genres": [
+        "Electronic",
+        "Techno",
+        "Ambient"
+      ],
+      "core_vibes": [
+        "Dynamic",
+        "Atmospheric",
+        "Deep"
+      ],
+      "variables": [
+        {
+          "name": "energy",
+          "description": "Overall energy level and intensity",
+          "type": "numeric",
+          "category": "Music",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "osc_path": null
+        },
+        {
+          "name": "tension",
+          "description": "Harmonic and rhythmic tension / buildup factor",
+          "type": "numeric",
+          "category": "Music",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "osc_path": null
+        },
+        {
+          "name": "rhythm_density",
+          "description": "Density and complexity of rhythmic/percussive elements",
+          "type": "numeric",
+          "category": "Music",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "osc_path": null
+        },
+        {
+          "name": "atmosphere",
+          "description": "Ambient, textural, and space-filling elements",
+          "type": "numeric",
+          "category": "Lights",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "osc_path": null
+        },
+        {
+          "name": "brightness",
+          "description": "Overall spectral brightness and high-frequency content",
+          "type": "numeric",
+          "category": "Visual",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "osc_path": null
+        },
+        {
+          "name": "glitch",
+          "description": "Frequency and intensity of rhythmic artifacts and stuttering",
+          "type": "numeric",
+          "category": "Visual",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0,
+          "osc_path": null
+        },
+        {
+          "name": "scene_description",
+          "description": "A short, evocative description of the visual/emotional scene",
+          "type": "string",
+          "category": "Visual",
+          "min": 0.0,
+          "max": 1.0,
+          "default": "The stage is set for a new journey.",
+          "osc_path": null
+        },
+        {
+          "name": "test",
+          "description": "",
+          "type": "numeric",
+          "category": "Music",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "osc_path": ""
+        }
+      ],
+      "presets": [
+        {
+          "name": "Cinematic Intro",
+          "state": {
+            "energy": 0.1,
+            "tension": 0.2,
+            "rhythm_density": 0.1,
+            "atmosphere": 0.9,
+            "brightness": 0.3,
+            "glitch": 0,
+            "scene_description": "Nebulous clouds and slow-motion textures."
+          },
+          "duration": 12.0
+        },
+        {
+          "name": "Dark Techno Drop",
+          "state": {
+            "energy": 0.95,
+            "tension": 0.4,
+            "rhythm_density": 0.9,
+            "atmosphere": 0.3,
+            "brightness": 0.7,
+            "glitch": 0.2,
+            "scene_description": "Strobe-lit industrial basement vibe."
+          },
+          "duration": 0.5
+        },
+        {
+          "name": "Euphoric Build",
+          "state": {
+            "energy": 0.8,
+            "tension": 0.9,
+            "rhythm_density": 0.7,
+            "atmosphere": 0.6,
+            "brightness": 0.8,
+            "glitch": 0.1,
+            "scene_description": "Rising white light and high-frequency energy."
+          },
+          "duration": 8.0
+        },
+        {
+          "name": "Ambient Wash",
+          "state": {
+            "energy": 0.05,
+            "tension": 0.05,
+            "rhythm_density": 0,
+            "atmosphere": 0.95,
+            "brightness": 0.2,
+            "glitch": 0,
+            "scene_description": "Silent, spacious ethereal void."
+          },
+          "duration": 15.0
+        }
+      ]
+    },
+    {
+      "id": "techno_night",
+      "name": "Warehouse Techno Set",
+      "description": "Main stage - Electronic Music Festival. High enery, high bpm.",
+      "genres": [
+        "Techno",
+        "Electro"
+      ],
+      "core_vibes": [
+        "Dark",
+        "industrial"
+      ],
+      "variables": [
+        {
+          "name": "techno_test",
+          "description": "",
+          "type": "numeric",
+          "category": "Music",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "osc_path": ""
+        }
+      ],
+      "presets": []
+    },
+    {
+      "id": "house_clubbing",
+      "name": "club house",
+      "description": "",
+      "genres": [],
+      "core_vibes": [],
+      "variables": [],
+      "presets": []
+    }
+  ]
+}

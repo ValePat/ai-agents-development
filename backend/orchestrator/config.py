@@ -7,19 +7,44 @@ import json
 import os
 from typing import Dict, List, Any
 
-VARIABLES_FILE = os.path.join(os.path.dirname(__file__), "variables.json")
+SHOWS_FILE = os.path.join(os.path.dirname(__file__), "..", "shows.json")
 
 def load_variables() -> List[Dict[str, Any]]:
-    """Load variable definitions from the JSON file."""
-    if not os.path.exists(VARIABLES_FILE):
+    """Load variable definitions from the active show in shows.json."""
+    if not os.path.exists(SHOWS_FILE):
         return []
-    with open(VARIABLES_FILE, "r") as f:
-        return json.load(f)
+    try:
+        with open(SHOWS_FILE, "r") as f:
+            data = json.load(f)
+            active_id = data.get("active_show_id", "default_show")
+            for show in data.get("shows", []):
+                if show["id"] == active_id:
+                    return show.get("variables", [])
+    except Exception:
+        pass
+    return []
 
 def save_variables(variables: List[Dict[str, Any]]) -> None:
-    """Save variable definitions to the JSON file."""
-    with open(VARIABLES_FILE, "w") as f:
-        json.dump(variables, f, indent=2)
+    """Save variable definitions to the active show in shows.json."""
+    if not os.path.exists(SHOWS_FILE):
+        return
+    try:
+        with open(SHOWS_FILE, "r") as f:
+            data = json.load(f)
+        
+        active_id = data.get("active_show_id", "default_show")
+        found = False
+        for show in data.get("shows", []):
+            if show["id"] == active_id:
+                show["variables"] = variables
+                found = True
+                break
+        
+        if found:
+            with open(SHOWS_FILE, "w") as f:
+                json.dump(data, f, indent=2)
+    except Exception as e:
+        print(f"Failed to save variables: {e}")
 
 def get_macro_config():
     """

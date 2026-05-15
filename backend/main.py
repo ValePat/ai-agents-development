@@ -15,6 +15,7 @@ from mcp import StdioServerParameters
 
 from orchestrator.router import router as orchestrator_router
 import orchestrator.router as orchestrator_router_module
+import orchestrator.llm_agent as llm_agent_module
 from orchestrator.interpolation_engine import InterpolationEngine
 from config_router import router as config_router
 
@@ -107,13 +108,18 @@ async def lifespan(app: FastAPI):
                 # Dynamic placeholder replacement: replace {{SAFE_DIR}} with the actual path.
                 processed_args = [arg.replace("{{SAFE_DIR}}", SAFE_DIR) for arg in args]
                 
+                # Also replace in environment variables if present
+                processed_env = config.get("env")
+                if processed_env:
+                    processed_env = {k: v.replace("{{SAFE_DIR}}", SAFE_DIR) for k, v in processed_env.items()}
+                
                 logger.info(f"Starting MCP server: {server_name} ({command} {' '.join(processed_args)})")
                 
                 # Define connection parameters for the MCP server (Stdio transport).
                 server_params = StdioServerParameters(
                     command=command,
                     args=processed_args,
-                    env=config.get("env")
+                    env=processed_env
                 )
                 
                 try:
@@ -134,6 +140,7 @@ async def lifespan(app: FastAPI):
 
         # Expose tools globally for orchestrator
         mcp_tools = all_tools
+        llm_agent_module.mcp_tools = all_tools
 
         if all_tools:
             logger.info(f"✓ Total MCP tools available: {[t.name for t in all_tools]}")

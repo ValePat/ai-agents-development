@@ -12,10 +12,11 @@
       "command": "npx",
       "args": [
         "-y",
-        "@modelcontextprotocol/server-memory",
-        "--memory-path",
-        "{{SAFE_DIR}}/memory.json"
-      ]
+        "@modelcontextprotocol/server-memory"
+      ],
+      "env": {
+        "MEMORY_FILE_PATH": "{{SAFE_DIR}}/memory.json"
+      }
     }
   }
 }

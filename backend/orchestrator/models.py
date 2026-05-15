@@ -75,9 +75,28 @@ def create_calibration_request_model() -> Type[BaseModel]:
 CalibrationRequest = create_calibration_request_model()
 
 
+class Preset(BaseModel):
+    """A named snapshot of macro values."""
+    name: str
+    state: Dict[str, Any]
+    duration: float = 4.0
+
+
+class ShowProfile(BaseModel):
+    """Metadata for a specific show/project."""
+    id: str = Field(..., description="Unique slug for the show (e.g., 'techno_night')")
+    name: str = Field(..., description="Display name of the show")
+    description: str = Field(..., description="Short description of the artistic goals")
+    genres: List[str] = Field(default_factory=list, description="List of genres (e.g., ['Techno', 'House'])")
+    core_vibes: List[str] = Field(default_factory=list, description="List of vibes (e.g., ['Bouncy', 'Fast'])")
+    variables: List[VariableDefinition] = Field(default_factory=list, description="Show-specific macro variable definitions")
+    presets: List[Preset] = Field(default_factory=list, description="Built-in presets for this show")
+
+
 class PromptRequest(BaseModel):
     """Request body for POST /orchestrator/prompt."""
     prompt: str = Field(..., description="Semantic description of the desired show state")
+    show_id: str = Field(default="default_show", description="The ID of the show context to use for memory and guidelines")
     duration: Optional[float] = Field(default=None, ge=0.1, description="Override LLM-suggested duration (seconds)")
 
 

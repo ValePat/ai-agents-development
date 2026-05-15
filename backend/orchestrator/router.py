@@ -26,20 +26,32 @@ from .models import (
     CalibrationRequest,
     MacroTarget,
     VariableDefinition,
+    ShowProfile,
     refresh_models,
 )
 from .config import load_variables, save_variables, refresh_config
 from .llm_agent import translate_prompt, LLMTranslationError
 from .interpolation_engine import InterpolationEngine
+import os
+import json
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["orchestrator"])
 
-# Module-level engine reference — set from main.py during lifespan startup.
-# Following the same global-singleton pattern used for `agent` in main.py.
-engine: InterpolationEngine | None = None
+SHOWS_FILE = os.path.join(os.path.dirname(__file__), "..", "shows.json")
 
+def load_shows_data() -> dict:
+    if not os.path.exists(SHOWS_FILE):
+        return {"active_show_id": "default_show", "shows": []}
+    with open(SHOWS_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def save_shows_data(data: dict):
+    with open(SHOWS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+# ... (rest of imports and setup)
 
 # ---------------------------------------------------------------------------
 # REST endpoints
@@ -65,13 +77,94 @@ async def post_prompt(request: PromptRequest) -> MacroTarget:
 
     try:
         current_status = engine.get_status().model_dump()
-        target = await translate_prompt(request.prompt, request.duration, current_status)
+        target = await translate_prompt(request.prompt, request.show_id, request.duration, current_status)
     except LLMTranslationError as exc:
         logger.warning(f"LLM translation error: {exc}")
         raise HTTPException(status_code=422, detail=str(exc))
 
     await engine.set_target(target)
     return target
+
+
+# ---------------------------------------------------------------------------
+# Show Management endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/shows")
+async def get_shows():
+    """List all show profiles."""
+    return load_shows_data()["shows"]
+
+@router.post("/shows")
+async def post_show(show: ShowProfile):
+    """Create or update a show profile."""
+    data = load_shows_data()
+    found = False
+    for i, s in enumerate(data["shows"]):
+        if s["id"] == show.id:
+            data["shows"][i] = show.model_dump()
+            found = True
+            break
+    if not found:
+        data["shows"].append(show.model_dump())
+    save_shows_data(data)
+    return {"status": "show saved", "id": show.id}
+
+@router.delete("/shows/{show_id}")
+async def delete_show(show_id: str):
+    """Delete a show profile."""
+    if show_id == "default_show":
+        raise HTTPException(status_code=400, detail="Cannot delete the default show")
+    
+    data = load_shows_data()
+    initial_count = len(data["shows"])
+    data["shows"] = [s for s in data["shows"] if s["id"] != show_id]
+    
+    if len(data["shows"]) == initial_count:
+        raise HTTPException(status_code=404, detail=f"Show {show_id} not found")
+    
+    # If the active show was deleted, reset it to the first available or default
+    if data.get("active_show_id") == show_id:
+        data["active_show_id"] = data["shows"][0]["id"] if data["shows"] else "default_show"
+        # Trigger re-initialization if needed
+        refresh_config()
+        refresh_models()
+        if engine:
+            engine.reinitialize()
+            
+    save_shows_data(data)
+    return {"status": "show deleted", "id": show_id, "new_active_id": data.get("active_show_id")}
+
+@router.get("/shows/active")
+async def get_active_show():
+    """Get the currently active show profile."""
+    data = load_shows_data()
+    active_id = data.get("active_show_id", "default_show")
+    for s in data["shows"]:
+        if s["id"] == active_id:
+            return s
+    # Fallback if active_id not found
+    if data["shows"]:
+        return data["shows"][0]
+    return {"id": "default_show", "name": "Default Show"}
+
+@router.post("/shows/active")
+async def set_active_show(request: dict):
+    """Set the active show ID and refresh system config."""
+    show_id = request.get("id")
+    if not show_id:
+        raise HTTPException(status_code=400, detail="Missing show ID")
+    data = load_shows_data()
+    data["active_show_id"] = show_id
+    save_shows_data(data)
+    
+    # Refresh all layers to reflect the new show's variables
+    refresh_config()
+    refresh_models()
+    if engine:
+        engine.reinitialize()
+        
+    return {"status": "active show set", "id": show_id}
 
 
 @router.post("/target", response_model=MacroTarget)
