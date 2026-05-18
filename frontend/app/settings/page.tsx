@@ -395,13 +395,13 @@ export default function SettingsPage() {
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
               <SectionHeader
                 title="System Prompt"
-                subtitle="Show-specific instructions injected into the agent. Behavioral guidelines (agent_instructions.txt) are prepended automatically."
+                subtitle="The complete system instructions for the orchestrator agent. Placeholders are resolved in real-time before sending to the LLM."
               />
               <Label>Instructions</Label>
               <TextArea
                 value={settings.orchestrator.system_prompt}
                 onChange={(v) => patchOrch({ system_prompt: v })}
-                rows={16}
+                rows={20}
                 mono
               />
               <div className="mt-3 space-y-2">
@@ -414,7 +414,33 @@ export default function SettingsPage() {
                   <li><code className="text-blue-400">{"{{{SHOW_CONTEXT}}}"}</code> - Active show name, description, genres, and core vibes.</li>
                   <li><code className="text-blue-400">{"{{{SHOW_ID}}}"}</code> - Active show ID (use as prefix for memory keys).</li>
                 </ul>
-                <p className="text-[10px] text-gray-500 mt-1">Note: Triple braces are required to avoid Jinja2 rendering conflicts. Behavioral guidelines are loaded separately from <code className="text-gray-300">agent_instructions.txt</code> and prepended automatically.</p>
+                <p className="text-[10px] text-gray-500 mt-1">Note: Triple braces are required to avoid Jinja2 rendering conflicts. You have full control over the prompt structure; ensuring the model returns valid JSON is critical for system stability.</p>
+              </div>
+            </div>
+
+            {/* OSC Configuration */}
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-5">
+              <SectionHeader
+                title="OSC Configuration"
+                subtitle="Target host and port for real-time OSC message streaming. Requires restart to rebind the UDP client."
+              />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div>
+                  <Label note="Target IP address">OSC Host</Label>
+                  <TextInput
+                    value={settings.orchestrator.osc_host}
+                    onChange={(v) => patchOrch({ osc_host: v })}
+                    placeholder="127.0.0.1"
+                  />
+                </div>
+                <div>
+                  <Label note="Target UDP port">OSC Port</Label>
+                  <TextInput
+                    value={settings.orchestrator.osc_port.toString()}
+                    onChange={(v) => patchOrch({ osc_port: parseInt(v) || 0 })}
+                    placeholder="9000"
+                  />
+                </div>
               </div>
             </div>
 

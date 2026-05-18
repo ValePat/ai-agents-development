@@ -1,5 +1,5 @@
 {
-  "active_show_id": "default_show",
+  "active_show_id": "techno_night",
   "shows": [
     {
       "id": "default_show",
@@ -47,6 +47,26 @@
           "osc_path": null
         },
         {
+          "name": "bass_boost",
+          "description": "Sub-frequency enhancement and low-end drive",
+          "type": "numeric",
+          "category": "Music",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.3,
+          "osc_path": null
+        },
+        {
+          "name": "reverb_wash",
+          "description": "Spatial diffusion and wetness of the main mix",
+          "type": "numeric",
+          "category": "Music",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.2,
+          "osc_path": null
+        },
+        {
           "name": "atmosphere",
           "description": "Ambient, textural, and space-filling elements",
           "type": "numeric",
@@ -54,6 +74,16 @@
           "min": 0.0,
           "max": 1.0,
           "default": 0.5,
+          "osc_path": null
+        },
+        {
+          "name": "strobe_intensity",
+          "description": "Frequency and brightness of stroboscopic lighting effects",
+          "type": "numeric",
+          "category": "Lights",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
           "osc_path": null
         },
         {
@@ -77,6 +107,26 @@
           "osc_path": null
         },
         {
+          "name": "color_hue",
+          "description": "Primary color shift across the visual spectrum",
+          "type": "numeric",
+          "category": "Visual",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "osc_path": null
+        },
+        {
+          "name": "texture_complexity",
+          "description": "Detail and noise level of visual generators",
+          "type": "numeric",
+          "category": "Visual",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.4,
+          "osc_path": null
+        },
+        {
           "name": "scene_description",
           "description": "A short, evocative description of the visual/emotional scene",
           "type": "string",
@@ -87,13 +137,23 @@
           "osc_path": null
         },
         {
-          "name": "test",
-          "description": "",
+          "name": "luminosity",
+          "description": "overall luminosity of the screen",
           "type": "numeric",
+          "category": "Lights",
+          "min": 0.0,
+          "max": 98.0,
+          "default": 0,
+          "osc_path": ""
+        },
+        {
+          "name": "screen_text",
+          "description": "this text variable will be shown on the ledwall of the main stage. use a single word expression.",
+          "type": "string",
           "category": "Music",
           "min": 0.0,
           "max": 1.0,
-          "default": 0.5,
+          "default": "Neutral",
           "osc_path": ""
         }
       ],
@@ -154,37 +214,39 @@
     },
     {
       "id": "techno_night",
-      "name": "Warehouse Techno Set",
-      "description": "Main stage - Electronic Music Festival. High enery, high bpm.",
+      "name": "Warehouse techno set",
+      "description": "Mainroom techno event. Huge warehouse. ",
       "genres": [
         "Techno",
-        "Electro"
+        "Hard Techno",
+        "Hardcore Techno"
       ],
       "core_vibes": [
         "Dark",
-        "industrial"
+        "Energetic"
       ],
       "variables": [
         {
-          "name": "techno_test",
-          "description": "",
+          "name": "lights_main",
+          "description": "controls overall lights luminosity",
           "type": "numeric",
-          "category": "Music",
+          "category": "Lights",
           "min": 0.0,
           "max": 1.0,
-          "default": 0.5,
+          "default": 0,
           "osc_path": ""
+        },
+        {
+          "name": "screen_text",
+          "description": "text that is shown on the main ledwall. use a single evocative word.",
+          "type": "string",
+          "category": "Visual",
+          "min": 0.0,
+          "max": 1.0,
+          "default": "Neutral",
+          "osc_path": null
         }
       ],
-      "presets": []
-    },
-    {
-      "id": "house_clubbing",
-      "name": "club house",
-      "description": "",
-      "genres": [],
-      "core_vibes": [],
-      "variables": [],
       "presets": []
     }
   ]

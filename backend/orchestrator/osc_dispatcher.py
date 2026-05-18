@@ -29,30 +29,49 @@ logger = logging.getLogger(__name__)
 _PREFIX = "/orchestrator"
 
 
+import logging
+import os
+import json
+
+from pythonosc.udp_client import SimpleUDPClient
+
+from . import config
+from .models import MacroState
+
+logger = logging.getLogger(__name__)
+
+# OSC address pattern prefix
+_PREFIX = "/orchestrator"
+
+SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "..", "settings.json")
+
+def _load_osc_settings() -> tuple[str, int]:
+    """Load OSC host and port from settings.json."""
+    try:
+        with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+            settings = json.load(f).get("orchestrator", {})
+            return (
+                settings.get("osc_host", "127.0.0.1"),
+                int(settings.get("osc_port", 9000))
+            )
+    except Exception:
+        return ("127.0.0.1", 9000)
+
 class OscDispatcher:
-    """Manages two UDP OSC clients: one for Ableton, one for TouchDesigner."""
+    """Manages a configurable UDP OSC client."""
 
     def __init__(self) -> None:
-        ableton_host = os.getenv("ABLETON_OSC_HOST", "127.0.0.1")
-        ableton_port = int(os.getenv("ABLETON_OSC_PORT", "9000"))
-        td_host = os.getenv("TD_OSC_HOST", "127.0.0.1")
-        td_port = int(os.getenv("TD_OSC_PORT", "9001"))
+        host, port = _load_osc_settings()
+        self._client = SimpleUDPClient(host, port)
 
-        self._ableton = SimpleUDPClient(ableton_host, ableton_port)
-        self._td = SimpleUDPClient(td_host, td_port)
-
-        logger.info(
-            "OSC dispatcher initialised — "
-            f"Ableton: {ableton_host}:{ableton_port}  "
-            f"TouchDesigner: {td_host}:{td_port}"
-        )
+        logger.info(f"OSC dispatcher initialised — Target: {host}:{port}")
 
     def dispatch(self, state: MacroState) -> None:
-        """Broadcast all macro values to both OSC targets."""
-        for client in (self._ableton, self._td):
-            for field in config.ALL_FIELDS:
-                val = getattr(state, field, None)
-                if val is not None:
-                    # Use custom OSC path if defined, else default to /orchestrator/<name>
-                    addr = config.OSC_PATHS.get(field) or f"{_PREFIX}/{field}"
-                    client.send_message(addr, val)
+        """Broadcast all macro values to the configured OSC target."""
+        for field in config.ALL_FIELDS:
+            val = getattr(state, field, None)
+            if val is not None:
+                # Use custom OSC path if defined, else default to /orchestrator/<name>
+                addr = config.OSC_PATHS.get(field) or f"{_PREFIX}/{field}"
+                self._client.send_message(addr, val)
+

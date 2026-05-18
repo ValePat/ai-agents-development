@@ -17,7 +17,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from .models import OrchestratorStatus, CalibrationRequest
+from . import models
 from .osc_dispatcher import OscDispatcher
 
 logger = logging.getLogger(__name__)
@@ -136,7 +136,7 @@ class InterpolationEngine:
             raise ValueError(f"Unknown macro field: {field!r}")
         self._override.pop(field, None)
 
-    def apply_calibration(self, cal: CalibrationRequest) -> None:
+    def apply_calibration(self, cal: models.CalibrationRequest) -> None:
         """Update per-macro output clamping ranges."""
         for f, (v_min, v_max) in self._ranges.items():
             min_attr = f"{f}_min"
@@ -149,13 +149,13 @@ class InterpolationEngine:
                     native_max=v_max
                 )
 
-    def get_status(self) -> OrchestratorStatus:
+    def get_status(self) -> models.OrchestratorStatus:
         elapsed = time.monotonic() - self._transition_start
         # Handle case where duration might be 0 or very small
         duration = getattr(self.target, "duration", 4.0)
         is_interp = elapsed < duration
         
-        return OrchestratorStatus(
+        return models.OrchestratorStatus(
             current=self.current.model_dump(),
             target=self.target.model_dump(),
             is_interpolating=is_interp,

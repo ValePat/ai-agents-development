@@ -5,12 +5,12 @@ All routes are mounted under the /orchestrator prefix (set in main.py).
 
 Endpoints
 ---------
-GET    /status               → OrchestratorStatus
+GET    /status               → models.OrchestratorStatus
 POST   /prompt               → run LLM + set new target
 POST   /override             → pin a field to a manual slider value
 DELETE /override/{field}     → release a pinned field
 POST   /calibrate            → adjust per-macro output clamping ranges
-WebSocket /ws               → stream OrchestratorStatus JSON at ~10 Hz
+WebSocket /ws               → stream models.OrchestratorStatus JSON at ~10 Hz
 """
 
 import logging
@@ -19,16 +19,7 @@ from typing import Dict, Any
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 import asyncio
 
-from .models import (
-    OrchestratorStatus,
-    PromptRequest,
-    OverrideRequest,
-    CalibrationRequest,
-    MacroTarget,
-    VariableDefinition,
-    ShowProfile,
-    refresh_models,
-)
+from . import models
 from .config import load_variables, save_variables, refresh_config
 from .llm_agent import translate_prompt, LLMTranslationError
 from .interpolation_engine import InterpolationEngine
@@ -57,20 +48,20 @@ def save_shows_data(data: dict):
 # REST endpoints
 # ---------------------------------------------------------------------------
 
-@router.get("/status", response_model=OrchestratorStatus)
-async def get_status() -> OrchestratorStatus:
+@router.get("/status", response_model=models.OrchestratorStatus)
+async def get_status() -> models.OrchestratorStatus:
     """Return the current engine state (current values, target, interpolation progress)."""
     if engine is None:
         raise HTTPException(status_code=503, detail="Orchestrator engine not initialised")
     return engine.get_status()
 
 
-@router.post("/prompt", response_model=MacroTarget)
-async def post_prompt(request: PromptRequest) -> MacroTarget:
+@router.post("/prompt", response_model=models.MacroTarget)
+async def post_prompt(request: models.PromptRequest) -> models.MacroTarget:
     """
-    Translate a semantic prompt via the agent → MacroTarget and set it on the engine.
+    Translate a semantic prompt via the agent → models.MacroTarget and set it on the engine.
 
-    The returned MacroTarget is the LLM's interpretation (useful for the UI preview toast).
+    The returned models.MacroTarget is the LLM's interpretation (useful for the UI preview toast).
     """
     if engine is None:
         raise HTTPException(status_code=503, detail="Orchestrator engine not initialised")
@@ -96,7 +87,7 @@ async def get_shows():
     return load_shows_data()["shows"]
 
 @router.post("/shows")
-async def post_show(show: ShowProfile):
+async def post_show(show: models.ShowProfile):
     """Create or update a show profile."""
     data = load_shows_data()
     found = False
@@ -128,7 +119,7 @@ async def delete_show(show_id: str):
         data["active_show_id"] = data["shows"][0]["id"] if data["shows"] else "default_show"
         # Trigger re-initialization if needed
         refresh_config()
-        refresh_models()
+        models.refresh_models()
         if engine:
             engine.reinitialize()
             
@@ -160,30 +151,30 @@ async def set_active_show(request: dict):
     
     # Refresh all layers to reflect the new show's variables
     refresh_config()
-    refresh_models()
+    models.refresh_models()
     if engine:
         engine.reinitialize()
         
     return {"status": "active show set", "id": show_id}
 
 
-@router.post("/target", response_model=MacroTarget)
-async def post_target(request: Dict[str, Any]) -> MacroTarget:
+@router.post("/target", response_model=models.MacroTarget)
+async def post_target(request: Dict[str, Any]) -> models.MacroTarget:
     """
     Set a target state directly (e.g. from a preset).
     
     Any fields in the request that don't match defined variables will be ignored
-    during interpolation, but we use the MacroTarget model for validation.
+    during interpolation, but we use the models.MacroTarget model for validation.
     """
     if engine is None:
         raise HTTPException(status_code=503, detail="Orchestrator engine not initialised")
 
-    # We use MacroTarget.model_validate to handle the dynamic schema.
-    # Because MacroState (base of MacroTarget) has extra="allow", 
+    # We use models.MacroTarget.model_validate to handle the dynamic schema.
+    # Because MacroState (base of models.MacroTarget) has extra="allow", 
     # it won't fail on extra fields, which matches the user's requirement
     # to ignore unbound variables.
     try:
-        target = MacroTarget.model_validate(request)
+        target = models.MacroTarget.model_validate(request)
     except Exception as exc:
         logger.warning(f"Target validation error: {exc}")
         raise HTTPException(status_code=422, detail=str(exc))
@@ -193,7 +184,7 @@ async def post_target(request: Dict[str, Any]) -> MacroTarget:
 
 
 @router.post("/override")
-async def post_override(request: OverrideRequest) -> dict:
+async def post_override(request: models.OverrideRequest) -> dict:
     """Pin a macro field to a manual value (slider override)."""
     if engine is None:
         raise HTTPException(status_code=503, detail="Orchestrator engine not initialised")
@@ -221,7 +212,7 @@ async def delete_override(field: str) -> dict:
 
 
 @router.post("/calibrate")
-async def post_calibrate(request: CalibrationRequest) -> dict:
+async def post_calibrate(request: models.CalibrationRequest) -> dict:
     """Adjust per-macro output clamping ranges (rehearsal tuning)."""
     if engine is None:
         raise HTTPException(status_code=503, detail="Orchestrator engine not initialised")
@@ -234,14 +225,14 @@ async def post_calibrate(request: CalibrationRequest) -> dict:
 # Variable Configuration endpoints
 # ---------------------------------------------------------------------------
 
-@router.get("/variables", response_model=list[VariableDefinition])
+@router.get("/variables", response_model=list[models.VariableDefinition])
 async def get_variables():
     """Return all defined macro variables."""
     return load_variables()
 
 
 @router.post("/variables")
-async def post_variable(var: VariableDefinition) -> dict:
+async def post_variable(var: models.VariableDefinition) -> dict:
     """Add or update a macro variable."""
     vars_list = load_variables()
     
@@ -259,7 +250,7 @@ async def post_variable(var: VariableDefinition) -> dict:
     
     # Refresh all layers
     refresh_config()
-    refresh_models()
+    models.refresh_models()
     if engine:
         engine.reinitialize()
         
@@ -279,7 +270,7 @@ async def delete_variable(name: str) -> dict:
     
     # Refresh all layers
     refresh_config()
-    refresh_models()
+    models.refresh_models()
     if engine:
         engine.reinitialize()
         
@@ -287,13 +278,13 @@ async def delete_variable(name: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# WebSocket — streams OrchestratorStatus at ~10 Hz
+# WebSocket — streams models.OrchestratorStatus at ~10 Hz
 # ---------------------------------------------------------------------------
 
 @router.websocket("/ws")
 async def websocket_status(websocket: WebSocket) -> None:
     """
-    Streams OrchestratorStatus JSON at ~10 Hz to the director's browser.
+    Streams models.OrchestratorStatus JSON at ~10 Hz to the director's browser.
 
     Only one director is expected at a time; no pub/sub bus required.
     """

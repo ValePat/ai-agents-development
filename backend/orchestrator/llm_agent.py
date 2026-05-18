@@ -12,8 +12,7 @@ import os
 import re
 from typing import Any
 
-from smolagents import LiteLLMModel, ToolCallingAgent
-from smolagents.agents import PromptTemplates
+from smolagents import LiteLLMModel
 
 logger = logging.getLogger(__name__)
 
@@ -130,77 +129,70 @@ def _call_agent(user_prompt: str, show_id: str, current_status: dict | None = No
     if not mcp_tools:
         logger.warning("No MCP tools available in llm_agent.mcp_tools. Agent will have limited capabilities.")
 
-    # ── LOAD BEHAVIORAL GUIDELINES ──
-    # Secondary instructions from file.
-    guidelines_path = os.path.join(os.path.dirname(__file__), "..", "agent_instructions.txt")
-    guidelines = ""
-    try:
-        with open(guidelines_path, "r", encoding="utf-8") as f:
-            guidelines = f.read()
-    except Exception as e:
-        logger.warning(f"Could not load agent_instructions.txt: {e}")
-
     # ── PROMPT CONSTRUCTION ──
-    # The UI Dashboard controls `raw_system_prompt` via settings.json.
-    raw_dashboard_prompt = settings.get("system_prompt")
-    if not raw_dashboard_prompt:
-        raise LLMTranslationError("System prompt is missing in settings.json. Please configure it in the Dashboard.")
+    # The UI Dashboard controls `system_prompt` via settings.json.
+    instructions_block = settings.get("system_prompt")
+    if not instructions_block:
+        # Fallback to agent_instructions.txt only if dashboard prompt is empty
+        guidelines_path = os.path.join(os.path.dirname(__file__), "..", "agent_instructions.txt")
+        try:
+            with open(guidelines_path, "r", encoding="utf-8") as f:
+                instructions_block = f.read()
+        except Exception:
+            raise LLMTranslationError("System prompt is missing and fallback guidelines could not be loaded.")
 
     # 1. Prepare dynamic variables
     var_defs = _get_variable_definitions_text()
     curr_state = json.dumps(current_status.get("current", {}), indent=2) if current_status else "{}"
     
-    # 2. Combine Guidelines and Dashboard Prompt into a single instructions block
-    # We follow the structure seen in prompt-sample.txt: Guidelines -> Show-Specific Instructions -> Dashboard Prompt
-    instructions_block = guidelines
-    instructions_block += "\n\n## Show-Specific Instructions:\n"
-    instructions_block += raw_dashboard_prompt
-    
-    # 3. Resolve all placeholders in the combined instructions block
-    # This handles placeholders in both the guidelines and the dashboard prompt.
+    # 2. Resolve all placeholders in the instructions block
     replacements = {
         "{{{VARIABLE_DEFINITIONS}}}": var_defs,
         "{{{CURRENT_STATE}}}": curr_state,
         "{{{SHOW_CONTEXT}}}": show_context_text,
         "{{{SHOW_ID}}}": show_id,
-        "{{{GUIDELINES}}}": "", # Already included at the top
+        "{{{GUIDELINES}}}": "", # Legacy
         "{{{tools_descriptions}}}": "" # Legacy
     }
     
     for k, v in replacements.items():
         instructions_block = instructions_block.replace(k, v)
 
-    # ── AGENT CONSTRUCTION ──
-    # We use the default smolagents template (which includes the ReAct preamble and tool list)
-    # and inject our resolved instructions via the 'instructions' parameter.
-    # We do NOT pass prompt_templates here to let smolagents use its full default set.
-    agent = ToolCallingAgent(
-        tools=mcp_tools,
-        model=model,
-        max_steps=max_steps,
-        instructions=instructions_block
-    )
+    # ── LOGGING ──
+    logger.info("=" * 80)
+    logger.info("FINAL SYSTEM PROMPT:")
+    logger.info(instructions_block)
+    logger.info("-" * 80)
+    logger.info(f"USER PROMPT: {user_prompt}")
+    logger.info("=" * 80)
 
-    # ── LOGGING: Output the fully compiled system prompt for debugging ──
-    compiled_system_prompt = agent.system_prompt
-    print("\n" + "="*80)
-    print("FINAL COMPILED SYSTEM PROMPT (sent to model):")
-    print("-"*80)
-    print(compiled_system_prompt)
-    print("-"*80)
-    print(f"AVAILABLE TOOLS: {[t.name for t in agent.tools.values()]}")
-    print("="*80 + "\n")
+    # ── AGENT EXECUTION ──
+    # We now call the model directly to get a single completion, bypassing the ReAct/tool loop.
+    # We wrap the instructions and user prompt into a standard chat message format.
+    messages = [
+        {"role": "system", "content": instructions_block},
+        {"role": "user", "content": user_prompt}
+    ]
 
-    # Run the agent — no extra kwargs needed; instructions are already baked in.
-    result = agent.run(user_prompt)
-    
-    if isinstance(result, dict):
-        return result
-    
     try:
-        return _extract_json(str(result))
+        response = model(messages)
+        # In smolagents, LiteLLMModel.__call__ returns a ChatMessage or similar depending on version, 
+        # but often it's just the text content if used directly. 
+        # Let's check how smolagents LiteLLMModel works.
+        # Actually, model.generate_message is more standard in newer smolagents versions.
+        # But if we look at smolagents source or common usage:
+        # agent = ToolCallingAgent(...) calls model(messages) internally.
+        
+        result_text = response.content if hasattr(response, 'content') else str(response)
+        
+        # Log the raw response for debugging
+        logger.info(f"RAW MODEL RESPONSE: {result_text}")
+        
+        return _extract_json(result_text)
+        
     except Exception as exc:
-        raise LLMTranslationError(f"Failed to parse JSON from agent. Final answer was: {result}")
+        logger.error(f"Model call failed: {exc}")
+        raise LLMTranslationError(f"Model call failed: {exc}")
 
 async def translate_prompt(prompt: str, show_id: str = "default_show", duration_override: float | None = None, current_status: dict | None = None) -> Any:
     """

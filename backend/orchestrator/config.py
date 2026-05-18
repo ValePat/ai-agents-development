@@ -17,11 +17,19 @@ def load_variables() -> List[Dict[str, Any]]:
         with open(SHOWS_FILE, "r") as f:
             data = json.load(f)
             active_id = data.get("active_show_id", "default_show")
+            
+            # Try to find the active show
             for show in data.get("shows", []):
                 if show["id"] == active_id:
                     return show.get("variables", [])
-    except Exception:
-        pass
+            
+            # Fallback to default_show if active_id not found
+            if active_id != "default_show":
+                for show in data.get("shows", []):
+                    if show["id"] == "default_show":
+                        return show.get("variables", [])
+    except Exception as e:
+        print(f"Error loading variables: {e}")
     return []
 
 def save_variables(variables: List[Dict[str, Any]]) -> None:
@@ -33,9 +41,16 @@ def save_variables(variables: List[Dict[str, Any]]) -> None:
             data = json.load(f)
         
         active_id = data.get("active_show_id", "default_show")
+        target_id = active_id
+        
+        # Check if active show exists
+        show_exists = any(s["id"] == active_id for s in data.get("shows", []))
+        if not show_exists:
+            target_id = "default_show"
+            
         found = False
         for show in data.get("shows", []):
-            if show["id"] == active_id:
+            if show["id"] == target_id:
                 show["variables"] = variables
                 found = True
                 break
@@ -43,6 +58,8 @@ def save_variables(variables: List[Dict[str, Any]]) -> None:
         if found:
             with open(SHOWS_FILE, "w") as f:
                 json.dump(data, f, indent=2)
+        else:
+            print(f"Failed to save variables: Show '{target_id}' not found.")
     except Exception as e:
         print(f"Failed to save variables: {e}")
 
