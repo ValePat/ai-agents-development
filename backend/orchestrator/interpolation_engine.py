@@ -80,6 +80,7 @@ class InterpolationEngine:
         self._override: dict[str, float] = {}   # field → pinned value
         self._transition_start: float = 0.0
         self._start_state = MacroState()
+        self._dispatcher = OscDispatcher()
         
         # Load ranges for clamping
         variables = load_variables()
@@ -106,7 +107,7 @@ class InterpolationEngine:
         """Accept a new target from the LLM or a direct caller."""
         from .models import MacroState
         from .config import get_macro_config
-        _, string_fields, _ = get_macro_config()
+        _, string_fields, _, _ = get_macro_config()
         self._start_state = MacroState(**self.current.model_dump())
         self.target = target
         self._transition_start = time.monotonic()

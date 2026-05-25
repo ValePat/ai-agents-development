@@ -48,7 +48,7 @@ export default function OrchestratorPage() {
 
   // ── Prompt zone ──────────────────────────────────────────────────────────
   const [prompt, setPrompt] = useState("");
-  const [duration, setDuration] = useState(4);
+  const [duration, setDuration] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewTarget, setPreviewTarget] = useState<(MacroState & { duration: number }) | null>(null);
 
@@ -222,7 +222,7 @@ export default function OrchestratorPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           prompt: prompt.trim(), 
-          duration,
+          ...(duration !== null ? { duration } : {}),
           show_id: activeShow?.id || "default_show"
         }),
       });
@@ -359,15 +359,21 @@ export default function OrchestratorPage() {
                 <label className="text-sm text-gray-400 whitespace-nowrap">Duration</label>
                 <input
                   type="number"
-                  value={duration}
-                  onChange={(e) => setDuration(parseFloat(e.target.value))}
+                  value={duration ?? ""}
+                  placeholder="auto"
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setDuration(val === "" ? null : parseFloat(val));
+                  }}
                   min={0.5}
                   max={120}
                   step={0.5}
-                  className="w-20 px-3 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-purple-500 focus:outline-none text-sm"
+                  className="w-20 px-3 py-2 bg-gray-700 text-white placeholder-gray-500 rounded-lg border border-gray-600 focus:border-purple-500 focus:outline-none text-sm"
                 />
                 <span className="text-sm text-gray-500">s</span>
-                <span className="text-xs text-gray-600 ml-1">(overrides LLM suggestion)</span>
+                <span className="text-xs text-gray-600 ml-1">
+                  {duration !== null ? "(overrides LLM)" : "(using LLM suggestion)"}
+                </span>
               </div>
               <button
                 type="submit"

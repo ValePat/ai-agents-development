@@ -1,5 +1,5 @@
 {
-  "active_show_id": "techno_night",
+  "active_show_id": "default_show",
   "shows": [
     {
       "id": "default_show",
@@ -211,43 +211,6 @@
           "duration": 15.0
         }
       ]
-    },
-    {
-      "id": "techno_night",
-      "name": "Warehouse techno set",
-      "description": "Mainroom techno event. Huge warehouse. ",
-      "genres": [
-        "Techno",
-        "Hard Techno",
-        "Hardcore Techno"
-      ],
-      "core_vibes": [
-        "Dark",
-        "Energetic"
-      ],
-      "variables": [
-        {
-          "name": "lights_main",
-          "description": "controls overall lights luminosity",
-          "type": "numeric",
-          "category": "Lights",
-          "min": 0.0,
-          "max": 1.0,
-          "default": 0,
-          "osc_path": ""
-        },
-        {
-          "name": "screen_text",
-          "description": "text that is shown on the main ledwall. use a single evocative word.",
-          "type": "string",
-          "category": "Visual",
-          "min": 0.0,
-          "max": 1.0,
-          "default": "Neutral",
-          "osc_path": null
-        }
-      ],
-      "presets": []
     }
   ]
 }

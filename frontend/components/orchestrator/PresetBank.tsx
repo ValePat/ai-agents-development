@@ -2,6 +2,23 @@
 
 import { useState, useEffect, memo, RefObject } from "react";
 
+type MacroDef = {
+  name: string;
+  description: string;
+  type: "numeric" | "string";
+  category: "Visual" | "Lights" | "Music";
+  min?: number;
+  max?: number;
+  default?: any;
+  osc_path?: string;
+};
+
+type Preset = {
+  name: string;
+  state: Record<string, any>;
+  duration: number;
+};
+
 // ... (types unchanged)
 
 /**

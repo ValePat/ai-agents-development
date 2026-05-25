@@ -56,6 +56,11 @@ def _get_variable_definitions_text() -> str:
 
 def _extract_json(text: str) -> dict:
     """Extract the first valid JSON object from the text."""
+    # Guard: None or blank response cannot contain JSON — raise ValueError
+    # so the retry loop in _call_agent treats this as a soft, retriable failure.
+    if not text or not text.strip():
+        raise ValueError(f"Model returned an empty or None response: {text!r}")
+
     # Try to find JSON in markdown blocks first
     match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
     if match:
@@ -63,7 +68,7 @@ def _extract_json(text: str) -> dict:
             return json.loads(match.group(1))
         except json.JSONDecodeError:
             pass
-            
+
     # Fallback: try to find anything between { and }
     match = re.search(r"(\{.*\})", text, re.DOTALL)
     if match:
@@ -71,7 +76,7 @@ def _extract_json(text: str) -> dict:
             return json.loads(match.group(1))
         except json.JSONDecodeError:
             pass
-            
+
     # Last resort: just try to parse the whole thing
     return json.loads(text)
 
@@ -112,22 +117,28 @@ def _call_agent(user_prompt: str, show_id: str, current_status: dict | None = No
         temperature = float(os.getenv("ORCHESTRATOR_TEMPERATURE", str(settings.get("temperature", 0.4))))
     except ValueError:
         temperature = 0.4
-        
+
     try:
-        max_steps = int(os.getenv("ORCHESTRATOR_MAX_STEPS", str(settings.get("max_steps", 10))))
+        max_tokens = int(os.getenv("ORCHESTRATOR_MAX_TOKENS", str(settings.get("max_tokens", 1024))))
     except ValueError:
-        max_steps = 10
+        max_tokens = 1024
+
+    # max_steps is repurposed as the number of JSON-extraction retries.
+    # If the model returns malformed JSON it will be called again up to max_steps times.
+    try:
+        max_retries = max(1, int(os.getenv("ORCHESTRATOR_MAX_STEPS", str(settings.get("max_steps", 3)))))
+    except ValueError:
+        max_retries = 3
 
     model = LiteLLMModel(
         model_id=model_id,
         api_key=api_key,
         api_base=api_base,
-        temperature=temperature
+        temperature=temperature,
+        max_tokens=max_tokens,
     )
     
-    # Ensure mcp_tools is populated (it should be set by main.py)
-    if not mcp_tools:
-        logger.warning("No MCP tools available in llm_agent.mcp_tools. Agent will have limited capabilities.")
+    logger.debug(f"Model params — temperature={temperature}, max_tokens={max_tokens}, max_retries={max_retries}")
 
     # ── PROMPT CONSTRUCTION ──
     # The UI Dashboard controls `system_prompt` via settings.json.
@@ -166,33 +177,51 @@ def _call_agent(user_prompt: str, show_id: str, current_status: dict | None = No
     logger.info(f"USER PROMPT: {user_prompt}")
     logger.info("=" * 80)
 
-    # ── AGENT EXECUTION ──
-    # We now call the model directly to get a single completion, bypassing the ReAct/tool loop.
-    # We wrap the instructions and user prompt into a standard chat message format.
+    # ── MODEL CALL WITH RETRY ──
+    # The model is called directly (single-turn completion, no ReAct/tool loop).
+    # max_retries controls how many times we attempt JSON extraction before giving up.
     messages = [
         {"role": "system", "content": instructions_block},
         {"role": "user", "content": user_prompt}
     ]
 
-    try:
-        response = model(messages)
-        # In smolagents, LiteLLMModel.__call__ returns a ChatMessage or similar depending on version, 
-        # but often it's just the text content if used directly. 
-        # Let's check how smolagents LiteLLMModel works.
-        # Actually, model.generate_message is more standard in newer smolagents versions.
-        # But if we look at smolagents source or common usage:
-        # agent = ToolCallingAgent(...) calls model(messages) internally.
-        
-        result_text = response.content if hasattr(response, 'content') else str(response)
-        
-        # Log the raw response for debugging
-        logger.info(f"RAW MODEL RESPONSE: {result_text}")
-        
-        return _extract_json(result_text)
-        
-    except Exception as exc:
-        logger.error(f"Model call failed: {exc}")
-        raise LLMTranslationError(f"Model call failed: {exc}")
+    # response_format enforces JSON-only output on providers that support it
+    # (OpenAI-compatible, Gemini via LiteLLM). This prevents chain-of-thought
+    # reasoning text from bleeding into the content field.
+    json_mode_kwargs: dict = {"response_format": {"type": "json_object"}}
+
+    last_exc: Exception | None = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            # Attempt with JSON mode enforced; fall back silently if unsupported.
+            try:
+                response = model(messages, **json_mode_kwargs)
+            except Exception as json_mode_err:
+                logger.debug(f"JSON mode not supported by provider ({json_mode_err}); retrying without it.")
+                json_mode_kwargs = {}  # disable for all subsequent attempts
+                response = model(messages)
+
+            # Extract text content defensively.
+            # response.content may exist but be None (e.g. tool-call-only responses
+            # from some providers). Fall back to str(response) in that case so
+            # _extract_json can raise a retriable ValueError rather than crashing.
+            if hasattr(response, "content") and response.content is not None:
+                result_text = response.content
+            else:
+                result_text = str(response) if response is not None else ""
+
+            logger.info(f"RAW MODEL RESPONSE (attempt {attempt}): {result_text}")
+            return _extract_json(result_text)
+        except (json.JSONDecodeError, ValueError) as exc:
+            logger.warning(f"JSON extraction failed on attempt {attempt}/{max_retries}: {exc}")
+            last_exc = exc
+        except Exception as exc:
+            logger.error(f"Model call failed: {exc}")
+            raise LLMTranslationError(f"Model call failed: {exc}") from exc
+
+    raise LLMTranslationError(
+        f"Could not extract valid JSON after {max_retries} attempt(s). Last error: {last_exc}"
+    )
 
 async def translate_prompt(prompt: str, show_id: str = "default_show", duration_override: float | None = None, current_status: dict | None = None) -> Any:
     """

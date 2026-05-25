@@ -1,0 +1,25 @@
+### FREE MODELS
+    nvidia/nemotron-3-super-120b-a12b:free
+    poolside/laguna-m.1:fre
+    openai/gpt-oss-120b:freee
+    z-ai/glm-4.5-air:free
+    arcee-ai/trinity-large-thinking:free
+    poolside/laguna-xs.2:free
+    deepseek/deepseek-v4-flash:free
+    nvidia/nemotron-3-nano-30b-a3b:free
+    openai/gpt-oss-20b:free
+    baidu/cobuddy:free
+    nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
+    minimax/minimax-m2.5:free
+    google/gemma-4-31b-it:free
+    nvidia/nemotron-nano-9b-v2:free
+    nvidia/nemotron-nano-12b-v2-vl:free
+    nvidia/llama-nemotron-embed-vl-1b-v2:free
+    google/gemma-4-26b-a4b-it:free
+    liquid/lfm-2.5-1.2b-thinking:free
+    qwen/qwen3-next-80b-a3b-instruct:free
+    liquid/lfm-2.5-1.2b-instruct:free
+    meta-llama/llama-3.3-70b-instruct:free
+    cognitivecomputations/dolphin-mistral-24b-venice-edition:free
+    meta-llama/llama-3.2-3b-instruct:free
+    qwen/qwen3-coder:free

@@ -7,6 +7,11 @@ const API_BASE = "http://localhost:8000";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+type OscTarget = {
+  host: string;
+  port: number;
+};
+
 type OrchestratorSettings = {
   model_id: string;
   api_base: string;
@@ -17,6 +22,7 @@ type OrchestratorSettings = {
   tick_rate: number;
   default_transition_duration: number;
   min_transition_duration: number;
+  osc_targets: Record<string, OscTarget>;
 };
 
 type FullSettings = {
@@ -381,13 +387,13 @@ export default function SettingsPage() {
                 note="Maximum tokens in the LLM response"
               />
               <SliderRow
-                label="Max Reasoning Steps"
+                label="Max Retries"
                 value={settings.orchestrator.max_steps}
                 onChange={(v) => patchOrch({ max_steps: v })}
                 min={1}
                 max={50}
                 step={1}
-                note="Maximum tool-call iterations per request"
+                note="JSON-extraction retries if model returns malformed output"
               />
             </div>
 
@@ -419,28 +425,46 @@ export default function SettingsPage() {
             </div>
 
             {/* OSC Configuration */}
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-5">
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-6">
               <SectionHeader
-                title="OSC Configuration"
-                subtitle="Target host and port for real-time OSC message streaming. Requires restart to rebind the UDP client."
+                title="OSC Targets"
+                subtitle="Configure multiple targets based on variable categories (Music, Visual, Lights). Rebinds on save."
               />
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div>
-                  <Label note="Target IP address">OSC Host</Label>
-                  <TextInput
-                    value={settings.orchestrator.osc_host}
-                    onChange={(v) => patchOrch({ osc_host: v })}
-                    placeholder="127.0.0.1"
-                  />
-                </div>
-                <div>
-                  <Label note="Target UDP port">OSC Port</Label>
-                  <TextInput
-                    value={settings.orchestrator.osc_port.toString()}
-                    onChange={(v) => patchOrch({ osc_port: parseInt(v) || 0 })}
-                    placeholder="9000"
-                  />
-                </div>
+              <div className="space-y-6">
+                {Object.entries(settings.orchestrator.osc_targets).map(([category, target]) => (
+                  <div key={category} className="space-y-3">
+                    <h3 className="text-sm font-medium text-blue-400 flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                      {category} Target
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <Label note="Target IP address">Host</Label>
+                        <TextInput
+                          value={target.host}
+                          onChange={(v) => {
+                            const newTargets = { ...settings.orchestrator.osc_targets };
+                            newTargets[category] = { ...target, host: v };
+                            patchOrch({ osc_targets: newTargets });
+                          }}
+                          placeholder="127.0.0.1"
+                        />
+                      </div>
+                      <div>
+                        <Label note="UDP Port">Port</Label>
+                        <TextInput
+                          value={target.port.toString()}
+                          onChange={(v) => {
+                            const newTargets = { ...settings.orchestrator.osc_targets };
+                            newTargets[category] = { ...target, port: parseInt(v) || 0 };
+                            patchOrch({ osc_targets: newTargets });
+                          }}
+                          placeholder="9000"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 

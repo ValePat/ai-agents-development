@@ -28,6 +28,11 @@ router = APIRouter(tags=["config"])
 # Pydantic schemas
 # ---------------------------------------------------------------------------
 
+class OscTarget(BaseModel):
+    host: str = Field(default="127.0.0.1", description="Target host for OSC messages")
+    port: int = Field(default=9000, ge=1, le=65535, description="Target port for OSC messages")
+
+
 class OrchestratorSettings(BaseModel):
     model_id: str = Field(..., description="OpenRouter model ID for the orchestrator LLM")
     api_base: str = Field(default="https://openrouter.ai/api/v1", description="API base URL for the LLM provider")
@@ -38,8 +43,14 @@ class OrchestratorSettings(BaseModel):
     tick_rate: int = Field(default=60, ge=1, le=120, description="Interpolation engine tick rate (Hz)")
     default_transition_duration: float = Field(default=4.0, ge=0.1, le=120.0, description="Default macro transition duration (seconds)")
     min_transition_duration: float = Field(default=0.5, ge=0.1, le=10.0, description="Minimum allowed transition duration (seconds)")
-    osc_host: str = Field(default="127.0.0.1", description="Target host for OSC messages")
-    osc_port: int = Field(default=9000, ge=1, le=65535, description="Target port for OSC messages")
+    osc_targets: dict[str, OscTarget] = Field(
+        default_factory=lambda: {
+            "Music": OscTarget(port=9000),
+            "Visual": OscTarget(port=9001),
+            "Lights": OscTarget(port=9002)
+        },
+        description="OSC targets mapped by category (Music, Visual, Lights)"
+    )
 
 
 class FullSettings(BaseModel):
