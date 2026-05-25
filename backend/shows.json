@@ -137,16 +137,6 @@
           "osc_path": null
         },
         {
-          "name": "luminosity",
-          "description": "overall luminosity of the screen",
-          "type": "numeric",
-          "category": "Lights",
-          "min": 0.0,
-          "max": 98.0,
-          "default": 0,
-          "osc_path": ""
-        },
-        {
           "name": "screen_text",
           "description": "this text variable will be shown on the ledwall of the main stage. use a single word expression.",
           "type": "string",

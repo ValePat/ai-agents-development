@@ -80,6 +80,19 @@ def _extract_json(text: str) -> dict:
     # Last resort: just try to parse the whole thing
     return json.loads(text)
 
+def _build_model(model_id: str, api_base: str, api_key: str, temperature: float, max_tokens: int) -> "LiteLLMModel":
+    """Construct a LiteLLMModel, adding the openrouter/ prefix if needed."""
+    if "openrouter.ai" in api_base and model_id and not model_id.startswith("openrouter/"):
+        model_id = f"openrouter/{model_id}"
+    return LiteLLMModel(
+        model_id=model_id,
+        api_key=api_key,
+        api_base=api_base,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+
+
 def _call_agent(user_prompt: str, show_id: str, current_status: dict | None = None) -> dict[str, Any]:
     """Synchronous agent call — run via asyncio.to_thread."""
     from .router import load_shows_data
@@ -100,18 +113,16 @@ def _call_agent(user_prompt: str, show_id: str, current_status: dict | None = No
         )
 
     # Favor settings.json (the Dashboard) over environment variables for runtime control.
-    model_id = settings.get("model_id") or os.getenv("ORCHESTRATOR_MODEL_ID")
+    primary_model_id = settings.get("model_id") or os.getenv("ORCHESTRATOR_MODEL_ID")
     api_base = settings.get("api_base", "https://openrouter.ai/api/v1")
-
-    # Robust prefixing: if using OpenRouter but prefix is missing, add it.
-    if "openrouter.ai" in api_base and model_id and not model_id.startswith("openrouter/"):
-        model_id = f"openrouter/{model_id}"
-
-    # LiteLLMModel automatically uses the environment variables for API keys/base
     api_key = os.getenv("OPENROUTER_API_KEY", "")
-    
-    if not model_id:
+
+    if not primary_model_id:
         raise LLMTranslationError("ORCHESTRATOR_MODEL_ID not configured in settings or environment.")
+
+    # Build the ordered list of models to try: primary first, then fallbacks.
+    fallback_model_ids: list[str] = settings.get("fallback_models", [])
+    models_to_try: list[str] = [primary_model_id] + [m for m in fallback_model_ids if m != primary_model_id]
 
     try:
         temperature = float(os.getenv("ORCHESTRATOR_TEMPERATURE", str(settings.get("temperature", 0.4))))
@@ -130,15 +141,8 @@ def _call_agent(user_prompt: str, show_id: str, current_status: dict | None = No
     except ValueError:
         max_retries = 3
 
-    model = LiteLLMModel(
-        model_id=model_id,
-        api_key=api_key,
-        api_base=api_base,
-        temperature=temperature,
-        max_tokens=max_tokens,
-    )
-    
     logger.debug(f"Model params — temperature={temperature}, max_tokens={max_tokens}, max_retries={max_retries}")
+    logger.info(f"Model chain: {models_to_try}")
 
     # ── PROMPT CONSTRUCTION ──
     # The UI Dashboard controls `system_prompt` via settings.json.
@@ -177,51 +181,65 @@ def _call_agent(user_prompt: str, show_id: str, current_status: dict | None = No
     logger.info(f"USER PROMPT: {user_prompt}")
     logger.info("=" * 80)
 
-    # ── MODEL CALL WITH RETRY ──
-    # The model is called directly (single-turn completion, no ReAct/tool loop).
-    # max_retries controls how many times we attempt JSON extraction before giving up.
+    # ── MODEL CALL WITH FALLBACK CHAIN ──
+    # Iterates through the model chain (primary + fallbacks).
+    # On RateLimitError: immediately tries the next model — no waiting.
+    # On JSON parse failure: retries the same model up to max_retries times.
     messages = [
         {"role": "system", "content": instructions_block},
         {"role": "user", "content": user_prompt}
     ]
 
-    # response_format enforces JSON-only output on providers that support it
-    # (OpenAI-compatible, Gemini via LiteLLM). This prevents chain-of-thought
-    # reasoning text from bleeding into the content field.
-    json_mode_kwargs: dict = {"response_format": {"type": "json_object"}}
-
     last_exc: Exception | None = None
-    for attempt in range(1, max_retries + 1):
-        try:
-            # Attempt with JSON mode enforced; fall back silently if unsupported.
+
+    for model_id in models_to_try:
+        model = _build_model(model_id, api_base, api_key, temperature, max_tokens)
+        logger.info(f"Trying model: {model_id}")
+
+        # Reset JSON mode kwargs per model so each gets a fresh attempt.
+        json_mode_kwargs: dict = {"response_format": {"type": "json_object"}}
+        rate_limited = False
+
+        for attempt in range(1, max_retries + 1):
             try:
-                response = model(messages, **json_mode_kwargs)
-            except Exception as json_mode_err:
-                logger.debug(f"JSON mode not supported by provider ({json_mode_err}); retrying without it.")
-                json_mode_kwargs = {}  # disable for all subsequent attempts
-                response = model(messages)
+                try:
+                    response = model(messages, **json_mode_kwargs)
+                except Exception as json_mode_err:
+                    err_str = str(json_mode_err)
+                    # Propagate rate limits immediately — don’t swallow them here.
+                    if "429" in err_str or "RateLimitError" in err_str or "rate_limit" in err_str.lower():
+                        raise
+                    logger.debug(f"JSON mode not supported ({json_mode_err}); retrying without it.")
+                    json_mode_kwargs = {}
+                    response = model(messages)
 
-            # Extract text content defensively.
-            # response.content may exist but be None (e.g. tool-call-only responses
-            # from some providers). Fall back to str(response) in that case so
-            # _extract_json can raise a retriable ValueError rather than crashing.
-            if hasattr(response, "content") and response.content is not None:
-                result_text = response.content
-            else:
-                result_text = str(response) if response is not None else ""
+                if hasattr(response, "content") and response.content is not None:
+                    result_text = response.content
+                else:
+                    result_text = str(response) if response is not None else ""
 
-            logger.info(f"RAW MODEL RESPONSE (attempt {attempt}): {result_text}")
-            return _extract_json(result_text)
-        except (json.JSONDecodeError, ValueError) as exc:
-            logger.warning(f"JSON extraction failed on attempt {attempt}/{max_retries}: {exc}")
-            last_exc = exc
-        except Exception as exc:
-            logger.error(f"Model call failed: {exc}")
-            raise LLMTranslationError(f"Model call failed: {exc}") from exc
+                logger.info(f"RAW MODEL RESPONSE [{model_id}] (attempt {attempt}): {result_text}")
+                return _extract_json(result_text)
 
-    raise LLMTranslationError(
-        f"Could not extract valid JSON after {max_retries} attempt(s). Last error: {last_exc}"
-    )
+            except (json.JSONDecodeError, ValueError) as exc:
+                logger.warning(f"JSON extraction failed [{model_id}] attempt {attempt}/{max_retries}: {exc}")
+                last_exc = exc
+
+            except Exception as exc:
+                err_str = str(exc)
+                if "429" in err_str or "RateLimitError" in err_str or "rate_limit" in err_str.lower():
+                    logger.warning(f"Rate limited on {model_id} — skipping to next fallback.")
+                    last_exc = exc
+                    rate_limited = True
+                    break
+                else:
+                    logger.error(f"Model call failed [{model_id}]: {exc}")
+                    raise LLMTranslationError(f"Model call failed: {exc}") from exc
+
+        if not rate_limited and last_exc is None:
+            break
+
+    raise LLMTranslationError(f"All models exhausted. Last error: {last_exc}")
 
 async def translate_prompt(prompt: str, show_id: str = "default_show", duration_override: float | None = None, current_status: dict | None = None) -> Any:
     """

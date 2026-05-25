@@ -35,6 +35,14 @@ class OscTarget(BaseModel):
 
 class OrchestratorSettings(BaseModel):
     model_id: str = Field(..., description="OpenRouter model ID for the orchestrator LLM")
+    fallback_models: list[str] = Field(
+        default_factory=lambda: [
+            "qwen/qwen3-next-80b-a3b-instruct:free",
+            "meta-llama/llama-3.3-70b-instruct:free",
+            "google/gemma-4-31b-it:free",
+        ],
+        description="Ordered fallback models tried instantly when the primary is rate-limited"
+    )
     api_base: str = Field(default="https://openrouter.ai/api/v1", description="API base URL for the LLM provider")
     system_prompt: str = Field(..., description="Full system prompt injected into the orchestrator agent")
     max_steps: int = Field(default=10, ge=1, le=50, description="Maximum reasoning steps per request")
@@ -124,18 +132,23 @@ async def update_orchestrator_settings(settings: OrchestratorSettings) -> Orches
 
 @router.get("/settings/defaults")
 async def get_defaults():
-    """Return a list of well-known OpenRouter model IDs as suggestions."""
+    """Return all available free OpenRouter model IDs as suggestions."""
     return {
         "suggested_models": [
-            "openrouter/anthropic/claude-3.5-haiku",
-            "openrouter/anthropic/claude-3.5-sonnet",
-            "openrouter/anthropic/claude-3-opus",
-            "openrouter/google/gemini-2.0-flash-001",
-            "openrouter/google/gemini-2.0-flash-lite-preview-02-05",
-            "openrouter/google/gemini-flash-1.5-8b",
-            "openrouter/openai/gpt-4o-mini",
-            "openrouter/openai/gpt-4o",
-            "openrouter/meta-llama/llama-3.3-70b-instruct",
-            "openrouter/mistralai/mistral-small-3.1-24b-instruct",
+            "deepseek/deepseek-v4-flash:free",
+            "qwen/qwen3-next-80b-a3b-instruct:free",
+            "arcee-ai/trinity-large-thinking:free",
+            "meta-llama/llama-3.3-70b-instruct:free",
+            "google/gemma-4-31b-it:free",
+            "nvidia/nemotron-3-super-120b-a12b:free",
+            "openai/gpt-oss-120b:free",
+            "openai/gpt-oss-20b:free",
+            "z-ai/glm-4.5-air:free",
+            "minimax/minimax-m2.5:free",
+            "nvidia/nemotron-3-nano-30b-a3b:free",
+            "nvidia/nemotron-nano-9b-v2:free",
+            "google/gemma-4-26b-a4b-it:free",
+            "qwen/qwen3-coder:free",
+            "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
         ]
     }

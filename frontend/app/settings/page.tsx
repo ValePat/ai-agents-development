@@ -14,6 +14,7 @@ type OscTarget = {
 
 type OrchestratorSettings = {
   model_id: string;
+  fallback_models: string[];
   api_base: string;
   system_prompt: string;
   max_steps: number;
@@ -351,6 +352,24 @@ export default function SettingsPage() {
                   onChange={(v) => patchOrch({ model_id: v })}
                   suggestions={suggestedModels}
                 />
+              </div>
+              <div>
+                <Label note="Tried instantly if primary is rate-limited, in order">Fallback Models</Label>
+                <textarea
+                  value={(settings.orchestrator.fallback_models ?? []).join("\n")}
+                  onChange={(e) =>
+                    patchOrch({
+                      fallback_models: e.target.value
+                        .split("\n")
+                        .map((s) => s.trim())
+                        .filter(Boolean),
+                    })
+                  }
+                  rows={4}
+                  placeholder={"qwen/qwen3-next-80b-a3b-instruct:free\nmeta-llama/llama-3.3-70b-instruct:free"}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 font-mono resize-y transition-colors"
+                />
+                <p className="text-[10px] text-gray-500 mt-1">One model ID per line. The system will try each in order the moment a 429 rate-limit is hit.</p>
               </div>
               <div>
                 <Label note="Provider API endpoint">API Base URL</Label>
